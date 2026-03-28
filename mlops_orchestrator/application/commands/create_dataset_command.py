@@ -47,9 +47,17 @@ class CreateDatasetCommand:
             display_name=request.name,
         )
 
-        resource_name = await self._dataset_port.create_dataset(
-            bq_source=bq_source, display_name=request.name
-        )
+        try:
+            resource_name = await self._dataset_port.create_dataset(
+                bq_source=bq_source, display_name=request.name
+            )
+        except Exception as e:
+            await self._audit_log.log_action(
+                action="create_dataset",
+                resource_id="unknown",
+                details={"error": str(e), "bq_dataset": request.bq_dataset},
+            )
+            raise
 
         dataset = dataset.register(resource_name)
 

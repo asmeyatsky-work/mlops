@@ -21,13 +21,14 @@ from mlops_orchestrator.domain.events.training_events import (
 )
 from mlops_orchestrator.domain.events.deployment_events import (
     ModelDeployedToVertexEvent, ModelDeployedToGkeEvent, ModelUndeployedEvent,
+    GkeDeploymentFailedEvent,
 )
 from mlops_orchestrator.domain.events.monitoring_events import (
     MonitoringConfiguredEvent, DriftDetectedEvent, RemediationTriggeredEvent,
 )
 
 
-# ── ManagedDataset ────────────────────────────────────────────────────
+# -- ManagedDataset --------------------------------------------------------
 
 class TestManagedDataset:
     def _make(self) -> ManagedDataset:
@@ -63,12 +64,20 @@ class TestManagedDataset:
         assert isinstance(ds.domain_events[0], DatasetValidationFailedEvent)
         assert ds.domain_events[0].reason == "bad data"
 
-    def test_events_accumulate(self):
-        ds = self._make().register("rn").fail_validation("reason")
-        assert len(ds.domain_events) == 2
+    def test_register_then_fail_validation_raises(self):
+        """REGISTERED is now terminal -- cannot transition to VALIDATION_FAILED."""
+        ds = self._make().register("rn")
+        with pytest.raises(ValueError, match="Invalid state transition"):
+            ds.fail_validation("reason")
+
+    def test_register_from_registered_raises(self):
+        """REGISTERED is terminal -- cannot register again."""
+        ds = self._make().register("rn")
+        with pytest.raises(ValueError, match="Invalid state transition"):
+            ds.register("rn2")
 
 
-# ── TrainingJob ───────────────────────────────────────────────────────
+# -- TrainingJob -----------------------------------------------------------
 
 class TestTrainingJob:
     def _make(self, **kw) -> TrainingJob:
@@ -129,8 +138,20 @@ class TestTrainingJob:
         assert self._make().start("j").is_active
         assert not self._make().start("j").complete("rn").is_active
 
+    def test_cannot_transition_from_failed(self):
+        """FAILED is terminal -- no transitions allowed."""
+        job = self._make().fail("infra error")
+        with pytest.raises(ValueError, match="Invalid state transition"):
+            job.start("j2")
 
-# ── VertexDeployment ──────────────────────────────────────────────────
+    def test_cannot_fail_from_succeeded(self):
+        """SUCCEEDED is terminal -- cannot fail."""
+        job = self._make().start("j").complete("rn")
+        with pytest.raises(ValueError, match="Invalid state transition"):
+            job.fail("late error")
+
+
+# -- VertexDeployment ------------------------------------------------------
 
 class TestVertexDeployment:
     def test_create_defaults(self):
@@ -159,8 +180,27 @@ class TestVertexDeployment:
         assert dep.status == "UNDEPLOYED"
         assert isinstance(dep.domain_events[-1], ModelUndeployedEvent)
 
+    def test_deploy_from_deployed_raises(self):
+        """DEPLOYED cannot transition to DEPLOYED again."""
+        dep = VertexDeployment.create("m", "ep").deploy("rn")
+        with pytest.raises(ValueError, match="Invalid state transition"):
+            dep.deploy("rn2")
 
-# ── GkeDeployment ─────────────────────────────────────────────────────
+    def test_undeploy_from_pending_raises(self):
+        """PENDING can only transition to DEPLOYED, not UNDEPLOYED."""
+        dep = VertexDeployment.create("m", "ep")
+        with pytest.raises(ValueError, match="Invalid state transition"):
+            dep.undeploy("reason")
+
+    def test_event_accumulation_deploy_then_undeploy(self):
+        """deploy + undeploy should produce exactly 2 domain events."""
+        dep = VertexDeployment.create("m", "ep").deploy("rn").undeploy("done")
+        assert len(dep.domain_events) == 2
+        assert isinstance(dep.domain_events[0], ModelDeployedToVertexEvent)
+        assert isinstance(dep.domain_events[1], ModelUndeployedEvent)
+
+
+# -- GkeDeployment ---------------------------------------------------------
 
 class TestGkeDeployment:
     def test_create_defaults(self):
@@ -176,12 +216,31 @@ class TestGkeDeployment:
         assert event.deployment_status == "DEPLOYED"
 
     def test_mark_failed(self):
+        """mark_failed now emits GkeDeploymentFailedEvent with a .reason field."""
         dep = GkeDeployment.create("m", "c").mark_failed("timeout")
         assert dep.status == "FAILED"
-        assert "FAILED: timeout" in dep.domain_events[0].deployment_status
+        event = dep.domain_events[0]
+        assert isinstance(event, GkeDeploymentFailedEvent)
+        assert event.reason == "timeout"
+
+    def test_mark_deployed_from_deployed_raises(self):
+        """DEPLOYED is terminal for GKE -- no further transitions."""
+        dep = GkeDeployment.create("m", "c").mark_deployed()
+        with pytest.raises(ValueError, match="Invalid state transition"):
+            dep.mark_deployed()
+
+    def test_mark_failed_from_deployed_raises(self):
+        """DEPLOYED is terminal for GKE -- cannot fail."""
+        dep = GkeDeployment.create("m", "c").mark_deployed()
+        with pytest.raises(ValueError, match="Invalid state transition"):
+            dep.mark_failed("late error")
+
+    def test_custom_replica_count(self):
+        dep = GkeDeployment.create("m", "c", replica_count=5)
+        assert dep.replica_count == 5
 
 
-# ── MonitoringConfig ──────────────────────────────────────────────────
+# -- MonitoringConfig ------------------------------------------------------
 
 class TestMonitoringConfig:
     def test_create_defaults(self):
@@ -208,8 +267,29 @@ class TestMonitoringConfig:
         assert isinstance(event, RemediationTriggeredEvent)
         assert event.remediation_type == "rollback"
 
+    def test_record_drift_non_drifted_emits_no_event(self):
+        """Non-drifted result should be added to history but emit no event."""
+        dr = DriftResult.from_test("f", "ks_test", DriftType.DATA, 0.01, 0.9)
+        assert not dr.is_drifted  # sanity check
+        mc = MonitoringConfig.create("ep-1").record_drift(dr)
+        assert len(mc.drift_history) == 1
+        assert len(mc.domain_events) == 0
 
-# ── AgentTask ─────────────────────────────────────────────────────────
+    def test_multiple_drift_records_accumulate(self):
+        """Recording multiple drift results accumulates in history."""
+        dr1 = DriftResult.from_test("f1", "ks_test", DriftType.DATA, 0.3, 0.01)
+        dr2 = DriftResult.from_test("f2", "ks_test", DriftType.DATA, 0.4, 0.001)
+        mc = MonitoringConfig.create("ep-1").record_drift(dr1).record_drift(dr2)
+        assert len(mc.drift_history) == 2
+        assert len(mc.domain_events) == 2  # both drifted
+
+    def test_custom_thresholds(self):
+        mc = MonitoringConfig.create("ep-1", drift_threshold=0.1, skew_threshold=0.2)
+        assert mc.drift_threshold == 0.1
+        assert mc.skew_threshold == 0.2
+
+
+# -- AgentTask -------------------------------------------------------------
 
 class TestAgentTask:
     def test_lifecycle(self):
@@ -233,8 +313,26 @@ class TestAgentTask:
         t = AgentTask.create("sub", depends_on=("t1", "t2"))
         assert t.depends_on == ("t1", "t2")
 
+    def test_complete_from_pending_raises(self):
+        """Must be IN_PROGRESS to complete, not PENDING."""
+        t = AgentTask.create("task")
+        with pytest.raises(ValueError, match="Invalid task transition"):
+            t.complete("result")
 
-# ── Agent ─────────────────────────────────────────────────────────────
+    def test_assign_from_completed_raises(self):
+        """COMPLETED is terminal -- cannot assign."""
+        t = AgentTask.create("task").assign("a").start().complete("done")
+        with pytest.raises(ValueError, match="Invalid task transition"):
+            t.assign("b")
+
+    def test_start_from_pending_raises(self):
+        """Must be ASSIGNED to start, not PENDING."""
+        t = AgentTask.create("task")
+        with pytest.raises(ValueError, match="Invalid task transition"):
+            t.start()
+
+
+# -- Agent -----------------------------------------------------------------
 
 class TestAgent:
     def test_create(self):
@@ -262,3 +360,9 @@ class TestAgent:
         a = Agent.create(AgentRole.ARCHITECT, ("design", "review"), ("read",))
         assert a.can_handle("design")
         assert not a.can_handle("deploy")
+
+    def test_complete_task_when_idle_raises(self):
+        """Agent must be BUSY to complete a task."""
+        a = Agent.create(AgentRole.VALIDATION, ("validate",), ("check",))
+        with pytest.raises(ValueError, match="has no active task"):
+            a.complete_task()

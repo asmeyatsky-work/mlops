@@ -7,9 +7,23 @@ from mlops_orchestrator.domain.events.event_base import DomainEvent
 from mlops_orchestrator.domain.events.deployment_events import (
     ModelDeployedToVertexEvent,
     ModelDeployedToGkeEvent,
+    GkeDeploymentFailedEvent,
     ModelUndeployedEvent,
 )
 from mlops_orchestrator.domain.value_objects.machine_spec import MachineSpec
+
+
+_VERTEX_VALID_TRANSITIONS: dict[str, set[str]] = {
+    "PENDING": {"DEPLOYED"},
+    "DEPLOYED": {"UNDEPLOYED"},
+    "UNDEPLOYED": set(),
+}
+
+_GKE_VALID_TRANSITIONS: dict[str, set[str]] = {
+    "PENDING": {"DEPLOYED", "FAILED"},
+    "DEPLOYED": set(),
+    "FAILED": set(),
+}
 
 
 @dataclass(frozen=True)
@@ -45,7 +59,13 @@ class VertexDeployment:
             machine_spec=machine_spec or MachineSpec(),
         )
 
+    def _validate_transition(self, target: str) -> None:
+        allowed = _VERTEX_VALID_TRANSITIONS.get(self.status, set())
+        if target not in allowed:
+            raise ValueError(f"Invalid state transition: {self.status} -> {target}")
+
     def deploy(self, endpoint_resource_name: str) -> VertexDeployment:
+        self._validate_transition("DEPLOYED")
         return replace(
             self,
             endpoint_resource_name=endpoint_resource_name,
@@ -62,6 +82,7 @@ class VertexDeployment:
         return replace(self, monitoring_enabled=True)
 
     def undeploy(self, reason: str) -> VertexDeployment:
+        self._validate_transition("UNDEPLOYED")
         return replace(
             self,
             status="UNDEPLOYED",
@@ -102,7 +123,13 @@ class GkeDeployment:
             replica_count=replica_count,
         )
 
+    def _validate_transition(self, target: str) -> None:
+        allowed = _GKE_VALID_TRANSITIONS.get(self.status, set())
+        if target not in allowed:
+            raise ValueError(f"Invalid state transition: {self.status} -> {target}")
+
     def mark_deployed(self) -> GkeDeployment:
+        self._validate_transition("DEPLOYED")
         return replace(
             self,
             status="DEPLOYED",
@@ -116,14 +143,15 @@ class GkeDeployment:
         )
 
     def mark_failed(self, reason: str) -> GkeDeployment:
+        self._validate_transition("FAILED")
         return replace(
             self,
             status="FAILED",
             domain_events=self.domain_events + (
-                ModelDeployedToGkeEvent(
+                GkeDeploymentFailedEvent(
                     aggregate_id=self.id,
                     cluster_name=self.cluster_name,
-                    deployment_status=f"FAILED: {reason}",
+                    reason=reason,
                 ),
             ),
         )

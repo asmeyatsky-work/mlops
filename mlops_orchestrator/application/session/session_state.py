@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, replace
+from types import MappingProxyType
 
 
 @dataclass(frozen=True)
@@ -18,7 +19,11 @@ class SessionState:
     job_handles: tuple[str, ...] = ()
     endpoint_names: tuple[str, ...] = ()
     active_project: str = ""
-    metadata: dict[str, str] = field(default_factory=dict)
+    _metadata: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def metadata(self) -> MappingProxyType[str, str]:
+        return MappingProxyType(self._metadata)
 
     def add_dataset(self, resource_name: str) -> SessionState:
         return replace(self, dataset_ids=self.dataset_ids + (resource_name,))
@@ -36,8 +41,8 @@ class SessionState:
         return replace(self, active_project=project)
 
     def set_metadata(self, key: str, value: str) -> SessionState:
-        new_meta = {**self.metadata, key: value}
-        return replace(self, metadata=new_meta)
+        new_meta = {**self._metadata, key: value}
+        return replace(self, _metadata=new_meta)
 
     @property
     def latest_dataset(self) -> str:
@@ -62,5 +67,5 @@ class SessionState:
             "job_handles": list(self.job_handles),
             "endpoint_names": list(self.endpoint_names),
             "active_project": self.active_project,
-            "metadata": dict(self.metadata),
+            "metadata": dict(self._metadata),
         }

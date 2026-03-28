@@ -52,18 +52,23 @@ class MonitoringConfig:
         )
 
     def record_drift(self, drift_result: DriftResult) -> MonitoringConfig:
-        return replace(
+        new_config = replace(
             self,
             drift_history=self.drift_history + (drift_result,),
-            domain_events=self.domain_events + (
-                DriftDetectedEvent(
-                    aggregate_id=self.id,
-                    drift_type=drift_result.drift_type.value,
-                    severity=drift_result.severity.value,
-                    metric_value=drift_result.statistic,
-                ),
-            ),
         )
+        if drift_result.is_drifted:
+            new_config = replace(
+                new_config,
+                domain_events=new_config.domain_events + (
+                    DriftDetectedEvent(
+                        aggregate_id=self.id,
+                        drift_type=drift_result.drift_type.value,
+                        severity=drift_result.severity.value,
+                        metric_value=drift_result.statistic,
+                    ),
+                ),
+            )
+        return new_config
 
     def trigger_remediation(self, remediation_type: str, details: str) -> MonitoringConfig:
         return replace(

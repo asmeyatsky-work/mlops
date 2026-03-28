@@ -17,6 +17,15 @@ class AgentRole(Enum):
     SECURITY = "security"
 
 
+_TASK_VALID_TRANSITIONS: dict[str, set[str]] = {
+    "PENDING": {"ASSIGNED"},
+    "ASSIGNED": {"IN_PROGRESS"},
+    "IN_PROGRESS": {"COMPLETED", "FAILED"},
+    "COMPLETED": set(),
+    "FAILED": set(),
+}
+
+
 @dataclass(frozen=True)
 class AgentTask:
     """A task assigned to a specialist agent."""
@@ -32,16 +41,25 @@ class AgentTask:
     def create(cls, description: str, depends_on: tuple[str, ...] = ()) -> AgentTask:
         return cls(id=str(uuid4()), description=description, depends_on=depends_on)
 
+    def _validate_transition(self, target: str) -> None:
+        allowed = _TASK_VALID_TRANSITIONS.get(self.status, set())
+        if target not in allowed:
+            raise ValueError(f"Invalid task transition: {self.status} -> {target}")
+
     def assign(self, agent_id: str) -> AgentTask:
+        self._validate_transition("ASSIGNED")
         return replace(self, assigned_agent_id=agent_id, status="ASSIGNED")
 
     def start(self) -> AgentTask:
+        self._validate_transition("IN_PROGRESS")
         return replace(self, status="IN_PROGRESS")
 
     def complete(self, result: str) -> AgentTask:
+        self._validate_transition("COMPLETED")
         return replace(self, status="COMPLETED", result=result)
 
     def fail(self, error: str) -> AgentTask:
+        self._validate_transition("FAILED")
         return replace(self, status="FAILED", result=error)
 
 
@@ -78,6 +96,8 @@ class Agent:
         return replace(self, status="BUSY", current_task_id=task_id)
 
     def complete_task(self) -> Agent:
+        if self.status != "BUSY":
+            raise ValueError(f"Agent {self.id} has no active task (status={self.status})")
         return replace(self, status="IDLE", current_task_id="")
 
     def can_handle(self, capability: str) -> bool:

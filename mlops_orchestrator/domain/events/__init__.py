@@ -11,6 +11,7 @@ from mlops_orchestrator.domain.events.training_events import (
 from mlops_orchestrator.domain.events.deployment_events import (
     ModelDeployedToVertexEvent,
     ModelDeployedToGkeEvent,
+    GkeDeploymentFailedEvent,
     ModelUndeployedEvent,
 )
 from mlops_orchestrator.domain.events.monitoring_events import (
@@ -28,6 +29,7 @@ __all__ = [
     "TrainingJobFailedEvent",
     "ModelDeployedToVertexEvent",
     "ModelDeployedToGkeEvent",
+    "GkeDeploymentFailedEvent",
     "ModelUndeployedEvent",
     "DriftDetectedEvent",
     "MonitoringConfiguredEvent",

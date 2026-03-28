@@ -1,11 +1,14 @@
 from __future__ import annotations
+import asyncio
 from typing import Any
 
 from mlops_orchestrator.application.orchestration.dag_orchestrator import (
     DAGOrchestrator,
+    OrchestrationError,
     WorkflowStep,
 )
 from mlops_orchestrator.application.session.session_state import SessionState
+from mlops_orchestrator.domain.entities.training_job import TRAIN_IMAGE
 from mlops_orchestrator.domain.ports.dataset_port import DatasetPort
 from mlops_orchestrator.domain.ports.deployment_port import VertexDeploymentPort
 from mlops_orchestrator.domain.ports.monitoring_port import MonitoringPort
@@ -52,7 +55,7 @@ class MLPipelineWorkflow:
             WorkflowStep("monitor", self._configure_monitoring, depends_on=("deploy",)),
         ])
 
-        context = {
+        context: dict[str, Any] = {
             "bq_dataset": bq_dataset,
             "bq_table": bq_table,
             "model_name": model_name,
@@ -70,6 +73,7 @@ class MLPipelineWorkflow:
         resource_name = await self._dataset_port.create_dataset(
             bq_source=bq_source, display_name=context["model_name"] + "_dataset"
         )
+        context["session"] = context["session"].add_dataset(resource_name)
         return resource_name
 
     async def _train_model(
@@ -80,8 +84,17 @@ class MLPipelineWorkflow:
             model_name=context["model_name"],
             dataset_id=dataset_id,
             gcs_uri="",
-            train_image="us-docker.pkg.dev/vertex-ai/training/tf-cpu.2-12:latest",
+            train_image=TRAIN_IMAGE,
         )
+        # Poll until training completes
+        while True:
+            status = await self._training_port.get_job_status(job_resource)
+            if status in {"SUCCEEDED", "FAILED", "CANCELLED"}:
+                break
+            await asyncio.sleep(5)
+        if status != "SUCCEEDED":
+            raise OrchestrationError(f"Training failed with status: {status}")
+        context["session"] = context["session"].add_job_handle(job_resource)
         return job_resource
 
     async def _deploy_model(
@@ -94,6 +107,7 @@ class MLPipelineWorkflow:
             endpoint_name=context["endpoint_name"],
             machine_spec=MachineSpec(machine_type="n1-standard-4"),
         )
+        context["session"] = context["session"].add_endpoint(endpoint_resource)
         return endpoint_resource
 
     async def _configure_monitoring(

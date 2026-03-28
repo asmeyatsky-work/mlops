@@ -41,11 +41,19 @@ class DeployToVertexCommand:
             machine_spec=machine_spec,
         )
 
-        endpoint_resource_name = await self._deployment_port.create_endpoint_and_deploy(
-            model_id=request.model_id,
-            endpoint_name=request.endpoint_name,
-            machine_spec=machine_spec,
-        )
+        try:
+            endpoint_resource_name = await self._deployment_port.create_endpoint_and_deploy(
+                model_id=request.model_id,
+                endpoint_name=request.endpoint_name,
+                machine_spec=machine_spec,
+            )
+        except Exception as e:
+            await self._audit_log.log_action(
+                action="deploy_to_vertex",
+                resource_id="unknown",
+                details={"error": str(e), "model_id": request.model_id},
+            )
+            raise
 
         deployment = deployment.deploy(endpoint_resource_name)
         await self._event_bus.publish(list(deployment.domain_events))

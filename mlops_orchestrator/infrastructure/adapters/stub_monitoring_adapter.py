@@ -4,13 +4,16 @@ from __future__ import annotations
 class StubMonitoringAdapter:
     """In-memory monitoring adapter. Implements MonitoringPort."""
 
-    def __init__(self) -> None:
+    def __init__(self, auto_fail: bool = False) -> None:
         self._configs: dict[str, dict[str, float]] = {}
         self._synthetic_alerts: list[dict[str, float]] = []
+        self._auto_fail = auto_fail
 
     async def configure_monitoring(
         self, endpoint_id: str, drift_threshold: float, skew_threshold: float
     ) -> bool:
+        if self._auto_fail:
+            return False
         self._configs[endpoint_id] = {
             "drift_threshold": drift_threshold,
             "skew_threshold": skew_threshold,

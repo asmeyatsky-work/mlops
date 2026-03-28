@@ -8,10 +8,22 @@ from mlops_orchestrator.infrastructure.config.container import DependencyContain
 class TestSettings:
     def test_defaults(self):
         s = Settings()
-        assert s.gcp_project == "mlops-491617"
+        assert s.gcp_project == ""
         assert s.gcp_location == "us-central1"
-        assert s.use_stubs is True
+        assert s.use_stubs is False
         assert s.transport == "stdio"
+
+    def test_settings_from_env_vars(self, monkeypatch):
+        """Settings can be loaded from environment variables with MLOPS_ prefix."""
+        monkeypatch.setenv("MLOPS_GCP_PROJECT", "my-test-project")
+        monkeypatch.setenv("MLOPS_GCP_LOCATION", "europe-west1")
+        monkeypatch.setenv("MLOPS_USE_STUBS", "true")
+        monkeypatch.setenv("MLOPS_TRANSPORT", "sse")
+        s = Settings()
+        assert s.gcp_project == "my-test-project"
+        assert s.gcp_location == "europe-west1"
+        assert s.use_stubs is True
+        assert s.transport == "sse"
 
 
 class TestDependencyContainer:
@@ -37,3 +49,18 @@ class TestDependencyContainer:
         container = DependencyContainer(Settings(use_stubs=True))
         assert container.job_status_query() is not None
         assert container.cost_query() is not None
+
+    def test_container_creates_independent_command_instances(self):
+        """Each call to a command factory returns a distinct instance."""
+        container = DependencyContainer(Settings(use_stubs=True))
+        cmd1 = container.create_dataset_command()
+        cmd2 = container.create_dataset_command()
+        assert cmd1 is not cmd2
+
+        train1 = container.train_model_command()
+        train2 = container.train_model_command()
+        assert train1 is not train2
+
+        deploy1 = container.deploy_vertex_command()
+        deploy2 = container.deploy_vertex_command()
+        assert deploy1 is not deploy2

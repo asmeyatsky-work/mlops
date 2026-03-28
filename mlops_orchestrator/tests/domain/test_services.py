@@ -16,7 +16,7 @@ from mlops_orchestrator.domain.services.remediation_service import (
 )
 
 
-# ── DatasetDomainService ──────────────────────────────────────────────
+# -- DatasetDomainService --------------------------------------------------
 
 class TestDatasetDomainService:
     svc = DatasetDomainService()
@@ -41,8 +41,16 @@ class TestDatasetDomainService:
         errors = self.svc.validate_bq_source(bq)
         assert "Table name must not contain dots" in errors
 
+    def test_validate_bq_source_dots_in_both(self):
+        """Both dataset and table contain dots -- should report both errors."""
+        bq = BigQuerySource(dataset="my.ds", table="my.tbl")
+        errors = self.svc.validate_bq_source(bq)
+        assert "Dataset name must not contain dots" in errors
+        assert "Table name must not contain dots" in errors
+        assert len(errors) == 2
 
-# ── DriftDetectionService ─────────────────────────────────────────────
+
+# -- DriftDetectionService -------------------------------------------------
 
 class TestDriftDetectionService:
     svc = DriftDetectionService()
@@ -64,6 +72,13 @@ class TestDriftDetectionService:
         result = self.svc.ks_test([], [1.0])
         assert result.statistic == 0.0
         assert result.p_value == 1.0
+
+    def test_ks_test_both_empty(self):
+        """Both baseline and current empty should return no-drift result."""
+        result = self.svc.ks_test([], [])
+        assert result.statistic == 0.0
+        assert result.p_value == 1.0
+        assert not result.is_drifted
 
     def test_chi_square_identical(self):
         counts = {"a": 100, "b": 100, "c": 100}
@@ -97,6 +112,17 @@ class TestDriftDetectionService:
         with pytest.raises(ValueError, match="same length"):
             self.svc.kl_divergence([0.5, 0.5], [0.3, 0.3, 0.4])
 
+    def test_kl_divergence_all_zeros(self):
+        """All-zero distributions: P is all zeros so KL = 0 (all bins skipped)."""
+        result = self.svc.kl_divergence([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        assert result.statistic == pytest.approx(0.0, abs=1e-6)
+        assert not result.is_drifted
+
+    def test_kl_divergence_empty_lists(self):
+        """Empty distributions (length 0) should produce KL = 0."""
+        result = self.svc.kl_divergence([], [])
+        assert result.statistic == pytest.approx(0.0, abs=1e-6)
+
     def test_psi_identical(self):
         data = [float(i) for i in range(100)]
         result = self.svc.psi(data, data)
@@ -116,6 +142,13 @@ class TestDriftDetectionService:
         result = self.svc.psi([1.0, 1.0], [1.0, 1.0])
         assert result.statistic == 0.0
 
+    def test_psi_single_element(self):
+        """Single-element lists where min == max should return 0 (no bins)."""
+        result = self.svc.psi([5.0], [5.0])
+        assert result.statistic == 0.0
+        assert result.p_value == 1.0
+        assert not result.is_drifted
+
     def test_evaluate_features(self):
         baseline = {"f1": [1.0, 2.0, 3.0] * 10, "f2": [4.0, 5.0, 6.0] * 10}
         current = {"f1": [1.0, 2.0, 3.0] * 10, "f2": [40.0, 50.0, 60.0] * 10}
@@ -132,7 +165,7 @@ class TestDriftDetectionService:
         assert len(results) == 0
 
 
-# ── ComplianceService ─────────────────────────────────────────────────
+# -- ComplianceService -----------------------------------------------------
 
 class TestComplianceService:
     svc = ComplianceService()
@@ -184,8 +217,40 @@ class TestComplianceService:
         gaps = self.svc.validate_article_15((), False, False)
         assert len(gaps) == 3
 
+    # -- All prohibited keywords (parametrized) --
+    @pytest.mark.parametrize("keyword", [
+        "social_scoring",
+        "mass_surveillance",
+        "subliminal_manipulation",
+        "exploitation_of_vulnerability",
+        "real_time_biometric_identification",
+    ])
+    def test_all_prohibited_keywords(self, keyword):
+        """Each prohibited keyword should trigger PROHIBITED tier."""
+        purpose = keyword.replace("_", " ")
+        rc = self.svc.classify_risk("any_domain", purpose, False)
+        assert rc.tier == RiskTier.PROHIBITED
 
-# ── RemediationService ────────────────────────────────────────────────
+    # -- All transparency keywords (parametrized) --
+    @pytest.mark.parametrize("keyword", [
+        "chatbot",
+        "deepfake",
+        "emotion_recognition",
+        "biometric",
+    ])
+    def test_all_transparency_keywords(self, keyword):
+        """Each transparency keyword should trigger LIMITED tier (non-high-risk domain)."""
+        purpose = keyword.replace("_", " ")
+        rc = self.svc.classify_risk("retail", purpose, False)
+        assert rc.tier == RiskTier.LIMITED
+
+    def test_prohibited_overrides_high_risk_domain(self):
+        """Even in a high-risk domain, prohibited purpose should yield PROHIBITED."""
+        rc = self.svc.classify_risk("healthcare", "social scoring system", True)
+        assert rc.tier == RiskTier.PROHIBITED
+
+
+# -- RemediationService ----------------------------------------------------
 
 class TestRemediationService:
     svc = RemediationService()
@@ -199,7 +264,7 @@ class TestRemediationService:
             DriftSeverity.CRITICAL: 0.5,
         }
         return DriftResult.from_test(
-            "f", "ks", dtype, stat_map[severity], 0.001,
+            "f", "ks_test", dtype, stat_map[severity], 0.001,
         )
 
     def test_no_results_no_action(self):
@@ -234,7 +299,7 @@ class TestRemediationService:
         ) == RemediationStrategy.NO_ACTION
 
     def test_none_severity_no_action(self):
-        result = DriftResult.from_test("f", "ks", DriftType.DATA, 0.01, 0.9)
+        result = DriftResult.from_test("f", "ks_test", DriftType.DATA, 0.01, 0.9)
         assert self.svc.select_strategy([result]) == RemediationStrategy.NO_ACTION
 
     def test_create_plan_rollback(self):
@@ -269,3 +334,20 @@ class TestRemediationService:
             RemediationStrategy.NO_ACTION, "ep-1", []
         )
         assert plan.steps == ()
+
+    def test_mixed_severities(self):
+        """When results have mixed severities, the highest severity wins."""
+        results = [
+            self._drift(DriftSeverity.LOW, DriftType.DATA),
+            self._drift(DriftSeverity.CRITICAL, DriftType.DATA),
+            self._drift(DriftSeverity.MEDIUM, DriftType.FEATURE),
+        ]
+        assert self.svc.select_strategy(results) == RemediationStrategy.ROLLBACK
+
+    def test_all_non_drifted_results(self):
+        """All results are non-drifted (high p_value) -- should be NO_ACTION."""
+        r1 = DriftResult.from_test("f1", "ks_test", DriftType.DATA, 0.01, 0.9)
+        r2 = DriftResult.from_test("f2", "ks_test", DriftType.FEATURE, 0.02, 0.8)
+        assert not r1.is_drifted
+        assert not r2.is_drifted
+        assert self.svc.select_strategy([r1, r2]) == RemediationStrategy.NO_ACTION

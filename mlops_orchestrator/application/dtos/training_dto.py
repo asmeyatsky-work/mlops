@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, model_validator
 
 class TrainModelRequest(BaseModel):
     """Input DTO for model training."""
-    model_name: str = Field(..., description="Display name for the model")
+    model_name: str = Field(..., min_length=1, description="Display name for the model")
     dataset_id: str = Field(default="", description="Managed dataset resource name")
     gcs_uri: str = Field(default="", description="GCS URI for raw training data")
 

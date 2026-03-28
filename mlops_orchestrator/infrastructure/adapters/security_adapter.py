@@ -1,20 +1,8 @@
 from __future__ import annotations
 import re
 
-
-# Known injection patterns for tool metadata sanitization
-_INJECTION_PATTERNS = [
-    re.compile(r"<\s*script", re.IGNORECASE),
-    re.compile(r"javascript:", re.IGNORECASE),
-    re.compile(r"\{\{.*\}\}"),  # template injection
-    re.compile(r"__import__"),
-    re.compile(r"eval\s*\("),
-    re.compile(r"exec\s*\("),
-    re.compile(r"os\.system"),
-    re.compile(r"subprocess"),
-    re.compile(r"\bsudo\b"),
-    re.compile(r"rm\s+-rf"),
-]
+# Allowlist approach: only permit safe characters in keys and values
+_SAFE_PATTERN = re.compile(r'^[a-zA-Z0-9_.\-/: @,=]+$')
 
 
 class GcpSecurityAdapter:
@@ -26,14 +14,16 @@ class GcpSecurityAdapter:
     async def sanitize_tool_metadata(
         self, tool_name: str, metadata: dict[str, str]
     ) -> dict[str, str]:
+        """Sanitize both keys and values using an allowlist approach."""
         sanitized: dict[str, str] = {}
         for key, value in metadata.items():
             if key.startswith("__"):
                 continue
-            clean_value = value
-            for pattern in _INJECTION_PATTERNS:
-                clean_value = pattern.sub("[SANITIZED]", clean_value)
-            sanitized[key] = clean_value
+            if not _SAFE_PATTERN.match(key):
+                continue
+            if not _SAFE_PATTERN.match(value):
+                value = re.sub(r'[^a-zA-Z0-9_.\-/: @,=]', '', value)
+            sanitized[key] = value
         return sanitized
 
     async def validate_iam_permissions(self, required_roles: list[str]) -> bool:

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from google.cloud import aiplatform
+import asyncio
 
 
 class VertexMonitoringAdapter:
@@ -8,11 +8,14 @@ class VertexMonitoringAdapter:
     def __init__(self, project: str, location: str = "us-central1") -> None:
         self._project = project
         self._location = location
+        from google.cloud import aiplatform
         aiplatform.init(project=project, location=location)
 
     async def configure_monitoring(
         self, endpoint_id: str, drift_threshold: float, skew_threshold: float
     ) -> bool:
+        from google.cloud import aiplatform
+
         try:
             objective_config = {
                 "training_dataset": {"target_field": "target"},
@@ -23,7 +26,8 @@ class VertexMonitoringAdapter:
                     "drift_thresholds": {"defaultThreshold": {"value": drift_threshold}}
                 },
             }
-            aiplatform.ModelDeploymentMonitoringJob.create(
+            await asyncio.to_thread(
+                aiplatform.ModelDeploymentMonitoringJob.create,
                 display_name=f"monitoring-{endpoint_id.split('/')[-1]}",
                 endpoint=endpoint_id,
                 objective_configs=[objective_config],
@@ -35,13 +39,15 @@ class VertexMonitoringAdapter:
             return False
 
     async def get_monitoring_status(self, endpoint_id: str) -> dict[str, str]:
-        jobs = aiplatform.ModelDeploymentMonitoringJob.list(
-            filter=f'endpoint="{endpoint_id}"'
+        from google.cloud import aiplatform
+
+        jobs = await asyncio.to_thread(
+            aiplatform.ModelDeploymentMonitoringJob.list,
+            filter=f'endpoint="{endpoint_id}"',
         )
         if jobs:
             return {"status": str(jobs[0].state), "endpoint_id": endpoint_id}
         return {"status": "NOT_CONFIGURED", "endpoint_id": endpoint_id}
 
     async def get_drift_alerts(self, endpoint_id: str) -> list[dict[str, float]]:
-        # Vertex returns alerts via Cloud Monitoring; this is a simplified accessor
         return []

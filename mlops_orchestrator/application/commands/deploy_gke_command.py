@@ -39,11 +39,23 @@ class DeployToGkeCommand:
             replica_count=2,
         )
 
-        result = await self._deployment_port.deploy(
-            model_id=request.model_id,
-            cluster_name=request.cluster_name,
-            replica_count=2,
-        )
+        try:
+            result = await self._deployment_port.deploy(
+                model_id=request.model_id,
+                cluster_name=request.cluster_name,
+                replica_count=2,
+            )
+        except Exception as e:
+            await self._audit_log.log_action(
+                action="deploy_to_gke",
+                resource_id=request.cluster_name,
+                details={"error": str(e), "model_id": request.model_id},
+            )
+            raise
+
+        deployment_name = result.get("deployment_name")
+        if not deployment_name:
+            raise ValueError("GKE deployment port did not return deployment_name")
 
         gke_deployment = gke_deployment.mark_deployed()
         await self._event_bus.publish(list(gke_deployment.domain_events))
@@ -54,11 +66,11 @@ class DeployToGkeCommand:
         )
 
         response = DeploymentResponse(
-            resource_name=result.get("deployment_name", request.cluster_name),
+            resource_name=deployment_name,
             status=gke_deployment.status,
             target="gke",
         )
         updated_session = session.add_endpoint(
-            f"gke://{request.cluster_name}/{result.get('deployment_name', '')}"
+            f"gke://{request.cluster_name}/{deployment_name}"
         )
         return response, updated_session

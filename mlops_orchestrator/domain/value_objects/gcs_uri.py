@@ -9,6 +9,9 @@ class GcsUri:
     def __post_init__(self) -> None:
         if not self.uri.startswith("gs://"):
             raise ValueError(f"GCS URI must start with 'gs://': {self.uri}")
+        bucket = self.uri[5:].split("/")[0]
+        if not bucket:
+            raise ValueError(f"GCS URI must include a bucket name: {self.uri}")
 
     @property
     def bucket(self) -> str:

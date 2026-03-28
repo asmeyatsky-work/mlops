@@ -19,11 +19,14 @@ class ResourceName:
         parts = name.split("/")
         if len(parts) < 6 or parts[0] != "projects" or parts[2] != "locations":
             raise ValueError(f"Invalid resource name format: {name}")
+        resource_id = "/".join(parts[5:])
+        if not resource_id:
+            raise ValueError(f"Resource name missing resource ID: {name}")
         return cls(
             project=parts[1],
             location=parts[3],
             resource_type=parts[4],
-            resource_id="/".join(parts[5:]),
+            resource_id=resource_id,
         )
 
     def __str__(self) -> str:

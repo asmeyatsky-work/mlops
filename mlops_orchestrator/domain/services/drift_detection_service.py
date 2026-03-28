@@ -3,7 +3,6 @@ import math
 from mlops_orchestrator.domain.value_objects.drift_result import (
     DriftResult,
     DriftType,
-    _compute_severity,
 )
 
 
@@ -65,9 +64,10 @@ class DriftDetectionService:
         total_b = sum(baseline_counts.values()) or 1
         total_c = sum(current_counts.values()) or 1
         chi2 = 0.0
+        smoothing = 0.5  # Laplace smoothing for new/missing categories
         for key in all_keys:
             observed = current_counts.get(key, 0)
-            expected_ratio = baseline_counts.get(key, 0) / total_b
+            expected_ratio = (baseline_counts.get(key, 0) + smoothing) / (total_b + smoothing * len(all_keys))
             expected = expected_ratio * total_c
             if expected > 0:
                 chi2 += (observed - expected) ** 2 / expected
@@ -93,13 +93,18 @@ class DriftDetectionService:
         total_q = sum(q_dist) or 1.0
         kl = 0.0
         for p_val, q_val in zip(p_dist, q_dist):
-            p_norm = (p_val / total_p) + eps
-            q_norm = (q_val / total_q) + eps
+            p_norm = p_val / total_p
+            if p_norm <= 0:
+                continue  # 0 * log(0/q) = 0 by convention
+            q_norm = (q_val / total_q) + eps  # eps only on Q to avoid division by zero
             kl += p_norm * math.log(p_norm / q_norm)
+        # Convert KL to a pseudo-p-value: use exponential decay so
+        # kl >= threshold maps to p_value < threshold
+        p_value = math.exp(-kl / max(threshold, 1e-10))
         return DriftResult.from_test(
             feature_name="distribution", test_name="kl_divergence",
             drift_type=DriftType.CONCEPT, statistic=kl,
-            p_value=1.0 - min(kl, 1.0),
+            p_value=p_value,
             threshold=threshold,
         )
 
@@ -137,10 +142,13 @@ class DriftDetectionService:
             b_pct = (b_ct / n_b) + eps
             c_pct = (c_ct / n_c) + eps
             psi_val += (c_pct - b_pct) * math.log(c_pct / b_pct)
+        # Direct threshold comparison: PSI > threshold means drifted.
+        # Map to p-value so that psi_val >= threshold → p_value < threshold.
+        p_value = math.exp(-psi_val / max(threshold, 1e-10))
         return DriftResult.from_test(
             feature_name="distribution", test_name="psi",
             drift_type=DriftType.DATA, statistic=psi_val,
-            p_value=1.0 - min(psi_val / 0.5, 1.0),
+            p_value=p_value,
             threshold=threshold,
         )
 

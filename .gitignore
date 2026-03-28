@@ -6,6 +6,13 @@ dist/
 build/
 .venv/
 .env
+.env.*
 .coverage
 htmlcov/
 .pytest_cache/
+.idea/
+.vscode/
+*.key
+*.pem
+credentials.json
+service-account.json

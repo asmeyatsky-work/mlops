@@ -15,6 +15,8 @@ TRAIN_IMAGE = "us-docker.pkg.dev/vertex-ai/training/tf-cpu.2-12:latest"
 _VALID_TRANSITIONS: dict[str, set[str]] = {
     "PENDING": {"RUNNING", "FAILED"},
     "RUNNING": {"SUCCEEDED", "FAILED"},
+    "SUCCEEDED": set(),
+    "FAILED": set(),
 }
 
 

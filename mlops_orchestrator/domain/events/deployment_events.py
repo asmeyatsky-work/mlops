@@ -14,6 +14,12 @@ class ModelDeployedToGkeEvent(DomainEvent):
     deployment_status: str = ""
 
 @dataclass(frozen=True)
+class GkeDeploymentFailedEvent(DomainEvent):
+    """Emitted when a GKE deployment fails."""
+    cluster_name: str = ""
+    reason: str = ""
+
+@dataclass(frozen=True)
 class ModelUndeployedEvent(DomainEvent):
     """Emitted when a model is removed from serving."""
     reason: str = ""

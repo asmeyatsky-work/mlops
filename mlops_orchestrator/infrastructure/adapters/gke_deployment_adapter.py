@@ -1,11 +1,14 @@
 from __future__ import annotations
-from kubernetes import client, config
+import asyncio
 
 
 class GkeDeploymentAdapter:
     """Real GKE Kubernetes deployment adapter. Implements GkeDeploymentPort."""
 
+    _SERVING_IMAGE = "tensorflow/serving:2.14.0"
+
     def __init__(self) -> None:
+        from kubernetes import client, config
         try:
             config.load_incluster_config()
         except config.ConfigException:
@@ -15,11 +18,13 @@ class GkeDeploymentAdapter:
     async def deploy(
         self, model_id: str, cluster_name: str, replica_count: int
     ) -> dict[str, str]:
+        from kubernetes import client
+
         model_short = model_id.split("/")[-1] if "/" in model_id else model_id
         deployment_name = f"{model_short}-serving"
         container = client.V1Container(
             name="model-server",
-            image="tensorflow/serving:latest",
+            image=self._SERVING_IMAGE,
             ports=[client.V1ContainerPort(container_port=8501)],
             env=[
                 client.V1EnvVar(name="MODEL_NAME", value=model_short),
@@ -42,17 +47,23 @@ class GkeDeploymentAdapter:
             metadata=client.V1ObjectMeta(name=deployment_name),
             spec=spec,
         )
-        self._apps_api.create_namespaced_deployment(
-            namespace="default", body=deployment
+        await asyncio.to_thread(
+            self._apps_api.create_namespaced_deployment,
+            namespace="default",
+            body=deployment,
         )
         return {"deployment_name": deployment_name, "status": "DEPLOYED"}
 
     async def get_deployment_status(
         self, cluster_name: str, deployment_name: str
     ) -> str:
+        from kubernetes import client
+
         try:
-            dep = self._apps_api.read_namespaced_deployment(
-                name=deployment_name, namespace="default"
+            dep = await asyncio.to_thread(
+                self._apps_api.read_namespaced_deployment,
+                name=deployment_name,
+                namespace="default",
             )
             if dep.status.available_replicas and dep.status.available_replicas > 0:
                 return "DEPLOYED"
@@ -63,6 +74,14 @@ class GkeDeploymentAdapter:
     async def delete_deployment(
         self, cluster_name: str, deployment_name: str
     ) -> None:
-        self._apps_api.delete_namespaced_deployment(
-            name=deployment_name, namespace="default"
-        )
+        from kubernetes.client.rest import ApiException
+
+        try:
+            await asyncio.to_thread(
+                self._apps_api.delete_namespaced_deployment,
+                name=deployment_name,
+                namespace="default",
+            )
+        except ApiException as e:
+            if e.status != 404:
+                raise

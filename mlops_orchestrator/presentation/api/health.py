@@ -14,5 +14,4 @@ class HealthCheck:
         return {
             "status": "healthy",
             "adapters": adapter_mode,
-            "project": c.settings.gcp_project,
         }

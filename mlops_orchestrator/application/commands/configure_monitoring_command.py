@@ -39,11 +39,19 @@ class ConfigureMonitoringCommand:
             skew_threshold=request.skew_threshold,
         )
 
-        success = await self._monitoring_port.configure_monitoring(
-            endpoint_id=request.endpoint_id,
-            drift_threshold=request.drift_threshold,
-            skew_threshold=request.skew_threshold,
-        )
+        try:
+            success = await self._monitoring_port.configure_monitoring(
+                endpoint_id=request.endpoint_id,
+                drift_threshold=request.drift_threshold,
+                skew_threshold=request.skew_threshold,
+            )
+        except Exception as e:
+            await self._audit_log.log_action(
+                action="configure_monitoring",
+                resource_id=request.endpoint_id,
+                details={"error": str(e), "status": "error"},
+            )
+            raise
 
         if success:
             config = config.enable()
@@ -55,6 +63,7 @@ class ConfigureMonitoringCommand:
             details={
                 "drift_threshold": str(request.drift_threshold),
                 "skew_threshold": str(request.skew_threshold),
+                "status": "success" if success else "failed",
             },
         )
 

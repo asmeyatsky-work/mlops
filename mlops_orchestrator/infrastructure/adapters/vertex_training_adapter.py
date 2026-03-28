@@ -1,5 +1,5 @@
 from __future__ import annotations
-from google.cloud import aiplatform
+import asyncio
 
 
 class VertexTrainingAdapter:
@@ -8,11 +8,14 @@ class VertexTrainingAdapter:
     def __init__(self, project: str, location: str = "us-central1") -> None:
         self._project = project
         self._location = location
+        from google.cloud import aiplatform
         aiplatform.init(project=project, location=location)
 
     async def start_training(
         self, model_name: str, dataset_id: str, gcs_uri: str, train_image: str
     ) -> str:
+        from google.cloud import aiplatform
+
         job = aiplatform.CustomTrainingJob(
             display_name=model_name,
             script_path="train.py",
@@ -20,13 +23,15 @@ class VertexTrainingAdapter:
         )
         kwargs: dict = {"model_display_name": model_name}
         if dataset_id:
-            dataset = aiplatform.TabularDataset(dataset_id)
+            dataset = await asyncio.to_thread(aiplatform.TabularDataset, dataset_id)
             kwargs["dataset"] = dataset
-        model = job.run(**kwargs, sync=False)
+        await asyncio.to_thread(job.run, **kwargs, sync=False)
         return job.resource_name
 
     async def get_job_status(self, job_resource_name: str) -> str:
-        job = aiplatform.CustomJob.get(job_resource_name)
+        from google.cloud import aiplatform
+
+        job = await asyncio.to_thread(aiplatform.CustomJob.get, job_resource_name)
         state_map = {
             "JOB_STATE_QUEUED": "PENDING",
             "JOB_STATE_PENDING": "PENDING",
@@ -38,19 +43,24 @@ class VertexTrainingAdapter:
         return state_map.get(str(job.state), "UNKNOWN")
 
     async def get_model_resource_name(self, job_resource_name: str) -> str:
-        job = aiplatform.CustomJob.get(job_resource_name)
+        from google.cloud import aiplatform
+
+        job = await asyncio.to_thread(aiplatform.CustomJob.get, job_resource_name)
         if hasattr(job, "output") and job.output:
             return str(job.output.get("model", ""))
-        models = aiplatform.Model.list(
+        models = await asyncio.to_thread(
+            aiplatform.Model.list,
             filter=f'display_name="{job.display_name}"',
             order_by="create_time desc",
         )
         return models[0].resource_name if models else ""
 
     async def cancel_job(self, job_resource_name: str) -> bool:
+        from google.cloud import aiplatform
+
         try:
-            job = aiplatform.CustomJob.get(job_resource_name)
-            job.cancel()
+            job = await asyncio.to_thread(aiplatform.CustomJob.get, job_resource_name)
+            await asyncio.to_thread(job.cancel)
             return True
         except Exception:
             return False

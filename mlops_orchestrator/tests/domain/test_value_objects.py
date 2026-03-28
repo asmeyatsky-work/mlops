@@ -20,7 +20,7 @@ from mlops_orchestrator.domain.value_objects.compliance import (
 )
 
 
-# ── ResourceName ──────────────────────────────────────────────────────
+# -- ResourceName ----------------------------------------------------------
 
 class TestResourceName:
     def test_full_name(self):
@@ -67,8 +67,18 @@ class TestResourceName:
         original = "projects/p/locations/l/datasets/d"
         assert str(ResourceName.from_string(original)) == original
 
+    def test_from_string_missing_resource_id_trailing_slash(self):
+        """Trailing slash means empty resource_id after join -- should raise."""
+        with pytest.raises(ValueError, match="missing resource ID"):
+            ResourceName.from_string("projects/p/locations/l/datasets/")
 
-# ── BigQuerySource ────────────────────────────────────────────────────
+    def test_from_string_exactly_five_parts(self):
+        """Exactly 5 parts (no resource_id) should fail the len < 6 check."""
+        with pytest.raises(ValueError, match="Invalid resource name"):
+            ResourceName.from_string("projects/p/locations/l/datasets")
+
+
+# -- BigQuerySource --------------------------------------------------------
 
 class TestBigQuerySource:
     def test_creation(self):
@@ -94,7 +104,7 @@ class TestBigQuerySource:
             BigQuerySource(dataset="ds", table="")
 
 
-# ── GcsUri ────────────────────────────────────────────────────────────
+# -- GcsUri ----------------------------------------------------------------
 
 class TestGcsUri:
     def test_valid_uri(self):
@@ -116,8 +126,18 @@ class TestGcsUri:
         assert uri.bucket == "bucket"
         assert uri.path == ""
 
+    def test_empty_bucket_gs_prefix_only(self):
+        """gs:// with no bucket name should raise ValueError."""
+        with pytest.raises(ValueError, match="must include a bucket name"):
+            GcsUri("gs://")
 
-# ── ModelArtifact ─────────────────────────────────────────────────────
+    def test_empty_string_raises(self):
+        """Empty string does not start with gs:// -- should raise."""
+        with pytest.raises(ValueError, match="must start with 'gs://'"):
+            GcsUri("")
+
+
+# -- ModelArtifact ---------------------------------------------------------
 
 class TestModelArtifact:
     def test_create_factory(self):
@@ -134,8 +154,35 @@ class TestModelArtifact:
         with pytest.raises(AttributeError):
             artifact.framework = "jax"  # type: ignore[misc]
 
+    def test_empty_resource_name_raises(self):
+        with pytest.raises(ValueError, match="resource_name cannot be empty"):
+            ModelArtifact(
+                resource_name="",
+                framework="tf",
+                artifact_uri="gs://b/m",
+                created_at=datetime.now(UTC),
+            )
 
-# ── MachineSpec ───────────────────────────────────────────────────────
+    def test_empty_framework_raises(self):
+        with pytest.raises(ValueError, match="framework cannot be empty"):
+            ModelArtifact(
+                resource_name="rn",
+                framework="",
+                artifact_uri="gs://b/m",
+                created_at=datetime.now(UTC),
+            )
+
+    def test_empty_artifact_uri_raises(self):
+        with pytest.raises(ValueError, match="artifact_uri cannot be empty"):
+            ModelArtifact(
+                resource_name="rn",
+                framework="tf",
+                artifact_uri="",
+                created_at=datetime.now(UTC),
+            )
+
+
+# -- MachineSpec -----------------------------------------------------------
 
 class TestMachineSpec:
     def test_defaults(self):
@@ -157,8 +204,16 @@ class TestMachineSpec:
         spec = MachineSpec(accelerator_type="", accelerator_count=2)
         assert not spec.has_gpu
 
+    def test_negative_accelerator_count_raises(self):
+        with pytest.raises(ValueError, match="accelerator_count must be >= 0"):
+            MachineSpec(accelerator_count=-1)
 
-# ── DriftResult ───────────────────────────────────────────────────────
+    def test_zero_replica_count_raises(self):
+        with pytest.raises(ValueError, match="replica_count must be >= 1"):
+            MachineSpec(replica_count=0)
+
+
+# -- DriftResult -----------------------------------------------------------
 
 class TestDriftResult:
     def test_is_drifted_below_threshold(self):
@@ -177,6 +232,12 @@ class TestDriftResult:
         dr = DriftResult.from_test("f", "ks", DriftType.DATA, 0.35, 0.01)
         assert dr.severity == DriftSeverity.CRITICAL
 
+    def test_exact_threshold_boundary_not_drifted(self):
+        """p_value == threshold means NOT drifted (strict less-than)."""
+        dr = DriftResult.from_test("f", "ks_test", DriftType.DATA, 0.1, 0.05, threshold=0.05)
+        assert not dr.is_drifted
+
+    # -- _compute_severity with default ks_test thresholds --
     @pytest.mark.parametrize("stat, expected", [
         (0.01, DriftSeverity.NONE),
         (0.07, DriftSeverity.LOW),
@@ -187,8 +248,63 @@ class TestDriftResult:
     def test_compute_severity(self, stat, expected):
         assert _compute_severity(stat) == expected
 
+    # -- _compute_severity boundary values (exact thresholds) --
+    # ks_test thresholds: (0.05, 0.1, 0.2, 0.3)
+    def test_compute_severity_ks_exact_boundary_none_to_low(self):
+        """statistic == 0.05 is NOT < 0.05, so it's LOW."""
+        assert _compute_severity(0.05, "ks_test") == DriftSeverity.LOW
 
-# ── CostMetrics ───────────────────────────────────────────────────────
+    def test_compute_severity_ks_exact_boundary_low_to_medium(self):
+        """statistic == 0.1 is NOT < 0.1, so it's MEDIUM."""
+        assert _compute_severity(0.1, "ks_test") == DriftSeverity.MEDIUM
+
+    def test_compute_severity_ks_exact_boundary_medium_to_high(self):
+        """statistic == 0.2 is NOT < 0.2, so it's HIGH."""
+        assert _compute_severity(0.2, "ks_test") == DriftSeverity.HIGH
+
+    def test_compute_severity_ks_exact_boundary_high_to_critical(self):
+        """statistic == 0.3 is NOT < 0.3, so it's CRITICAL."""
+        assert _compute_severity(0.3, "ks_test") == DriftSeverity.CRITICAL
+
+    # -- _compute_severity with chi_square thresholds: (3.84, 7.81, 15.51, 30.0)
+    @pytest.mark.parametrize("stat, expected", [
+        (1.0, DriftSeverity.NONE),
+        (3.84, DriftSeverity.LOW),
+        (5.0, DriftSeverity.LOW),
+        (7.81, DriftSeverity.MEDIUM),
+        (10.0, DriftSeverity.MEDIUM),
+        (15.51, DriftSeverity.HIGH),
+        (30.0, DriftSeverity.CRITICAL),
+        (50.0, DriftSeverity.CRITICAL),
+    ])
+    def test_compute_severity_chi_square(self, stat, expected):
+        assert _compute_severity(stat, "chi_square") == expected
+
+    # -- _compute_severity with psi thresholds: (0.1, 0.2, 0.3, 0.5)
+    @pytest.mark.parametrize("stat, expected", [
+        (0.05, DriftSeverity.NONE),
+        (0.1, DriftSeverity.LOW),
+        (0.15, DriftSeverity.LOW),
+        (0.2, DriftSeverity.MEDIUM),
+        (0.3, DriftSeverity.HIGH),
+        (0.5, DriftSeverity.CRITICAL),
+    ])
+    def test_compute_severity_psi(self, stat, expected):
+        assert _compute_severity(stat, "psi") == expected
+
+    # -- _compute_severity with kl_divergence thresholds: (0.05, 0.1, 0.3, 0.5)
+    @pytest.mark.parametrize("stat, expected", [
+        (0.01, DriftSeverity.NONE),
+        (0.05, DriftSeverity.LOW),
+        (0.1, DriftSeverity.MEDIUM),
+        (0.3, DriftSeverity.HIGH),
+        (0.5, DriftSeverity.CRITICAL),
+    ])
+    def test_compute_severity_kl_divergence(self, stat, expected):
+        assert _compute_severity(stat, "kl_divergence") == expected
+
+
+# -- CostMetrics -----------------------------------------------------------
 
 class TestCostMetrics:
     def test_has_waste_true(self):
@@ -222,7 +338,7 @@ class TestCostRecommendation:
         assert cr.estimated_savings == 100.0
 
 
-# ── Compliance ────────────────────────────────────────────────────────
+# -- Compliance ------------------------------------------------------------
 
 class TestRiskClassification:
     def test_creation(self):
@@ -260,4 +376,9 @@ class TestModelCard:
     def test_is_complete_false_no_metrics(self):
         mc = ModelCard(model_name="m", version="1", purpose="p", limitations="l",
                        data_sources=("d",), accuracy_metrics=())
+        assert not mc.is_complete
+
+    def test_is_complete_false_when_limitations_empty(self):
+        mc = ModelCard(model_name="m", version="1", purpose="p", limitations="",
+                       data_sources=("d",), accuracy_metrics=(("f1", 0.9),))
         assert not mc.is_complete

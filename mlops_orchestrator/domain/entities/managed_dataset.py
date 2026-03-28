@@ -10,6 +10,12 @@ from mlops_orchestrator.domain.events.dataset_events import (
 )
 from mlops_orchestrator.domain.value_objects.bq_source import BigQuerySource
 
+_VALID_TRANSITIONS: dict[str, set[str]] = {
+    "PENDING": {"REGISTERED", "VALIDATION_FAILED"},
+    "REGISTERED": set(),
+    "VALIDATION_FAILED": set(),
+}
+
 
 @dataclass(frozen=True)
 class ManagedDataset:
@@ -38,7 +44,13 @@ class ManagedDataset:
             bq_source=bq_source,
         )
 
+    def _validate_transition(self, target: str) -> None:
+        allowed = _VALID_TRANSITIONS.get(self.status, set())
+        if target not in allowed:
+            raise ValueError(f"Invalid state transition: {self.status} -> {target}")
+
     def register(self, resource_name: str) -> ManagedDataset:
+        self._validate_transition("REGISTERED")
         return replace(
             self,
             resource_name=resource_name,
@@ -54,6 +66,7 @@ class ManagedDataset:
         )
 
     def fail_validation(self, reason: str) -> ManagedDataset:
+        self._validate_transition("VALIDATION_FAILED")
         return replace(
             self,
             status="VALIDATION_FAILED",

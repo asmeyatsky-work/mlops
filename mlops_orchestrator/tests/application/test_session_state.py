@@ -1,6 +1,8 @@
 """Tests for session state."""
 from __future__ import annotations
 
+from types import MappingProxyType
+
 from mlops_orchestrator.application.session.session_state import SessionState
 
 
@@ -60,3 +62,64 @@ class TestSessionState:
         assert d["dataset_ids"] == ["d"]
         assert d["active_project"] == "p"
         assert d["metadata"] == {"k": "v"}
+
+    # ── New tests ──────────────────────────────────────────────────────
+
+    def test_metadata_property_returns_mapping_proxy_type(self):
+        """metadata property returns a MappingProxyType (read-only view)."""
+        s = SessionState().set_metadata("a", "1")
+        meta = s.metadata
+        assert isinstance(meta, MappingProxyType)
+        assert meta["a"] == "1"
+
+    def test_metadata_read_only_rejects_mutation(self):
+        """Attempting to mutate the MappingProxyType raises TypeError."""
+        s = SessionState().set_metadata("a", "1")
+        meta = s.metadata
+        try:
+            meta["a"] = "2"  # type: ignore[index]
+            assert False, "Should have raised TypeError"
+        except TypeError:
+            pass
+
+    def test_set_metadata_overwrites_existing_key(self):
+        """set_metadata with an existing key replaces its value."""
+        s = SessionState().set_metadata("k", "old").set_metadata("k", "new")
+        assert s.metadata["k"] == "new"
+
+    def test_mutation_safety_returned_metadata_does_not_affect_state(self):
+        """Mutating the dict obtained via to_dict() does not alter the state."""
+        s = SessionState().set_metadata("x", "1")
+        d = s.to_dict()
+        d["metadata"]["x"] = "HACKED"
+        # Original state must be unchanged
+        assert s.metadata["x"] == "1"
+
+    def test_to_dict_includes_all_fields(self):
+        """to_dict() includes model_uris, job_handles, and endpoint_names."""
+        s = (
+            SessionState()
+            .add_dataset("d")
+            .add_model_uri("m")
+            .add_job_handle("j")
+            .add_endpoint("e")
+            .set_project("p")
+            .set_metadata("k", "v")
+        )
+        d = s.to_dict()
+        assert d["dataset_ids"] == ["d"]
+        assert d["model_uris"] == ["m"]
+        assert d["job_handles"] == ["j"]
+        assert d["endpoint_names"] == ["e"]
+        assert d["active_project"] == "p"
+        assert d["metadata"] == {"k": "v"}
+
+    def test_latest_job_returns_empty_when_empty(self):
+        """latest_job returns '' on a fresh state with no job handles."""
+        s = SessionState()
+        assert s.latest_job == ""
+
+    def test_latest_endpoint_returns_empty_when_empty(self):
+        """latest_endpoint returns '' on a fresh state with no endpoints."""
+        s = SessionState()
+        assert s.latest_endpoint == ""

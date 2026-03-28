@@ -41,12 +41,20 @@ class TrainModelCommand:
             train_image=TRAIN_IMAGE,
         )
 
-        job_resource_name = await self._training_port.start_training(
-            model_name=request.model_name,
-            dataset_id=request.dataset_id,
-            gcs_uri=request.gcs_uri,
-            train_image=job.train_image,
-        )
+        try:
+            job_resource_name = await self._training_port.start_training(
+                model_name=request.model_name,
+                dataset_id=request.dataset_id,
+                gcs_uri=request.gcs_uri,
+                train_image=job.train_image,
+            )
+        except Exception as e:
+            await self._audit_log.log_action(
+                action="train_model",
+                resource_id="unknown",
+                details={"error": str(e), "model_name": request.model_name},
+            )
+            raise
 
         job = job.start(job_resource_name)
         await self._event_bus.publish(list(job.domain_events))

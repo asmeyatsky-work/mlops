@@ -55,25 +55,29 @@ class SwarmCoordinator:
     ) -> dict[str, str]:
         """Fan-out tasks to available agents, fan-in results."""
         results: dict[str, str] = {}
-        assignments: list[tuple[Agent, AgentTask]] = []
         available = [a for a in self._agents.values() if a.status == "IDLE"]
+        remaining = list(tasks)
 
-        for task in tasks:
-            if not available:
-                break
-            agent = available.pop(0)
-            assignments.append((agent, task))
+        while remaining and available:
+            batch_size = min(len(remaining), len(available))
+            assignments = list(zip(available[:batch_size], remaining[:batch_size]))
+            remaining = remaining[batch_size:]
+            available = available[batch_size:]
 
-        task_results = await asyncio.gather(
-            *(executor(agent, task) for agent, task in assignments),
-            return_exceptions=True,
-        )
+            task_results = await asyncio.gather(
+                *(executor(agent, task) for agent, task in assignments),
+                return_exceptions=True,
+            )
 
-        for (agent, task), result in zip(assignments, task_results):
-            if isinstance(result, BaseException):
-                results[task.id] = f"FAILED: {result}"
-            else:
-                results[task.id] = result
+            for (agent, task), result in zip(assignments, task_results):
+                if isinstance(result, BaseException):
+                    results[task.id] = f"FAILED: {result}"
+                else:
+                    results[task.id] = result
+
+        for task in remaining:
+            results[task.id] = "FAILED: no available agents"
+
         return results
 
     async def _swarm(
@@ -85,6 +89,11 @@ class SwarmCoordinator:
         results: dict[str, str] = {}
         task_queue = list(tasks)
         agents = list(self._agents.values())
+
+        if not agents:
+            for task in task_queue:
+                results[task.id] = "FAILED: no agents"
+            return results
 
         while task_queue:
             batch = task_queue[:len(agents)]
@@ -104,16 +113,23 @@ class SwarmCoordinator:
         executor: Callable[[Agent, AgentTask], Coroutine[Any, Any, str]],
     ) -> dict[str, str]:
         """Tree delegation: orchestrator delegates to specialists."""
+        agents_list = list(self._agents.values())
+        if not agents_list:
+            return {t.id: "FAILED: no agents" for t in tasks}
+
         orchestrator = next(
-            (a for a in self._agents.values() if a.role == AgentRole.ORCHESTRATOR),
-            list(self._agents.values())[0],
+            (a for a in agents_list if a.role == AgentRole.ORCHESTRATOR),
+            agents_list[0],
         )
         results: dict[str, str] = {}
         for task in tasks:
             specialist = self._find_specialist(task)
             agent = specialist or orchestrator
-            result = await executor(agent, task)
-            results[task.id] = result
+            try:
+                result = await executor(agent, task)
+                results[task.id] = result
+            except Exception as e:
+                results[task.id] = f"FAILED: {e}"
         return results
 
     async def _mesh(
@@ -124,13 +140,20 @@ class SwarmCoordinator:
         """Iterative refinement with direct agent-to-agent communication."""
         results: dict[str, str] = {}
         agents = list(self._agents.values())
+        if not agents:
+            return {t.id: "FAILED: no agents" for t in tasks}
+
         for task in tasks:
             current_result = ""
             for agent in agents[:3]:  # max 3 refinement passes
                 refined_task = AgentTask.create(
                     description=f"{task.description}\nPrevious: {current_result}"
                 ) if current_result else task
-                current_result = await executor(agent, refined_task)
+                try:
+                    current_result = await executor(agent, refined_task)
+                except Exception as e:
+                    current_result = f"FAILED: {e}"
+                    break
             results[task.id] = current_result
         return results
 
@@ -142,11 +165,18 @@ class SwarmCoordinator:
         """Sequential stages with I/O contracts."""
         results: dict[str, str] = {}
         agents = list(self._agents.values())
+        if not agents:
+            return {t.id: "FAILED: no agents" for t in tasks}
+
         for task in tasks:
             stage_input = task.description
             for i, agent in enumerate(agents):
                 stage_task = AgentTask.create(description=stage_input)
-                stage_input = await executor(agent, stage_task)
+                try:
+                    stage_input = await executor(agent, stage_task)
+                except Exception as e:
+                    stage_input = f"FAILED: {e}"
+                    break
             results[task.id] = stage_input
         return results
 

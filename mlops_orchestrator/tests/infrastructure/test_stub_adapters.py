@@ -7,6 +7,7 @@ from mlops_orchestrator.domain.value_objects.bq_source import BigQuerySource
 from mlops_orchestrator.domain.value_objects.machine_spec import MachineSpec
 from mlops_orchestrator.domain.value_objects.cost_metrics import CostMetrics, CostRecommendation
 from mlops_orchestrator.domain.events.event_base import DomainEvent
+from mlops_orchestrator.domain.events.dataset_events import DatasetCreatedEvent
 from mlops_orchestrator.infrastructure.adapters.stub_dataset_adapter import StubDatasetAdapter
 from mlops_orchestrator.infrastructure.adapters.stub_training_adapter import StubTrainingAdapter
 from mlops_orchestrator.infrastructure.adapters.stub_deployment_adapter import (
@@ -119,6 +120,15 @@ class TestStubMonitoringAdapter:
         result = await adapter.get_drift_alerts("ep")
         assert len(result) == 1
 
+    async def test_auto_fail_mode(self):
+        """StubMonitoringAdapter with auto_fail=True returns False from configure_monitoring."""
+        adapter = StubMonitoringAdapter(auto_fail=True)
+        success = await adapter.configure_monitoring("ep-1", 0.05, 0.1)
+        assert success is False
+        # auto_fail should not store the config
+        status = await adapter.get_monitoring_status("ep-1")
+        assert status["status"] == "NOT_CONFIGURED"
+
 
 class TestInMemoryEventBus:
     async def test_publish_and_read(self):
@@ -145,6 +155,37 @@ class TestInMemoryEventBus:
         bus._published.append(DomainEvent(aggregate_id="x"))
         bus.clear()
         assert len(bus.published_events) == 0
+
+    async def test_publish_empty_list(self):
+        """Publishing an empty list should not raise and adds no events."""
+        bus = InMemoryEventBus()
+        await bus.publish([])
+        assert len(bus.published_events) == 0
+
+    async def test_subclass_event_dispatch(self):
+        """Handler subscribed to DatasetCreatedEvent is called for that subclass,
+        but handler subscribed to DomainEvent is NOT called for DatasetCreatedEvent
+        (dispatch is by exact type, not by hierarchy)."""
+        bus = InMemoryEventBus()
+        base_received: list[DomainEvent] = []
+        sub_received: list[DomainEvent] = []
+
+        async def base_handler(e):
+            base_received.append(e)
+
+        async def sub_handler(e):
+            sub_received.append(e)
+
+        await bus.subscribe(DomainEvent, base_handler)
+        await bus.subscribe(DatasetCreatedEvent, sub_handler)
+
+        dataset_event = DatasetCreatedEvent(aggregate_id="ds-1", resource_name="rn")
+        await bus.publish([dataset_event])
+
+        # The subclass handler must be called
+        assert len(sub_received) == 1
+        # The base handler is keyed on DomainEvent (exact type), not on DatasetCreatedEvent
+        assert len(base_received) == 0
 
 
 class TestStubAuditLogAdapter:

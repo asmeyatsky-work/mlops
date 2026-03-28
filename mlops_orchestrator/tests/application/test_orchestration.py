@@ -94,6 +94,20 @@ class TestDAGOrchestrator:
         with pytest.raises(OrchestrationError, match="Step 'a' failed"):
             await dag.execute({})
 
+    async def test_empty_dag(self):
+        """DAG with no steps should return empty results."""
+        dag = DAGOrchestrator([])
+        result = await dag.execute({})
+        assert result == {}
+
+    def test_self_cycle_detection(self):
+        """A step that depends on itself should raise OrchestrationError."""
+        async def noop(ctx, c): return None
+        with pytest.raises(OrchestrationError, match="Circular dependency"):
+            DAGOrchestrator([
+                WorkflowStep("a", noop, depends_on=("a",)),
+            ])
+
 
 # ── AgentRegistry ─────────────────────────────────────────────────────
 
@@ -141,6 +155,48 @@ class TestAgentRegistry:
         assert AgentRole.ORCHESTRATOR in roles
         assert AgentRole.DATA_ENGINEER in roles
         assert AgentRole.SECURITY in roles
+
+    def test_duplicate_register_overwrites(self):
+        """Registering an agent with the same id overwrites the previous one."""
+        registry = AgentRegistry()
+        agent_v1 = Agent.create(AgentRole.DATA_ENGINEER, ("etl",), ())
+        # Manually create a second agent with the same id but different capabilities
+        agent_v2 = Agent(
+            id=agent_v1.id,
+            role=AgentRole.DATA_ENGINEER,
+            capabilities=("sql", "bigquery"),
+            permitted_tools=(),
+        )
+        registry.register(agent_v1)
+        registry.register(agent_v2)
+        # Only one agent with that id
+        assert len(registry.all_agents()) == 1
+        retrieved = registry.get_by_id(agent_v1.id)
+        assert retrieved is not None
+        assert retrieved.capabilities == ("sql", "bigquery")
+
+    def test_create_default_swarm_capabilities_verification(self):
+        """Default swarm agents have expected capabilities for key roles."""
+        registry = AgentRegistry.create_default_swarm()
+        # Data engineer should have etl
+        data_engineers = registry.get_by_role(AgentRole.DATA_ENGINEER)
+        assert len(data_engineers) == 1
+        assert "etl" in data_engineers[0].capabilities
+
+        # Deployment agent should have kubernetes
+        deployers = registry.get_by_role(AgentRole.DEPLOYMENT)
+        assert len(deployers) == 1
+        assert "kubernetes" in deployers[0].capabilities
+
+        # Security agent should have iam
+        sec_agents = registry.get_by_role(AgentRole.SECURITY)
+        assert len(sec_agents) == 1
+        assert "iam" in sec_agents[0].capabilities
+
+        # Orchestrator should have coordination
+        orchestrators = registry.get_by_role(AgentRole.ORCHESTRATOR)
+        assert len(orchestrators) == 1
+        assert "coordination" in orchestrators[0].capabilities
 
 
 # ── SwarmCoordinator ──────────────────────────────────────────────────
@@ -200,11 +256,16 @@ class TestSwarmCoordinator:
         assert len(results) == 1
 
     async def test_orchestrator_worker_more_tasks_than_agents(self):
+        """With 1 agent and 3 tasks, only 1 gets processed; the other 2 are dropped as FAILED."""
         agents = _make_agents(1)
         tasks = _make_tasks(3)
         coord = SwarmCoordinator(agents, OrchestrationPattern.ORCHESTRATOR_WORKER)
         results = await coord.coordinate(tasks, _mock_executor)
-        assert len(results) == 1  # only 1 agent available
+        assert len(results) == 3
+        succeeded = [v for v in results.values() if v.startswith("result-")]
+        failed = [v for v in results.values() if "FAILED" in v]
+        assert len(succeeded) == 1
+        assert len(failed) == 2
 
     async def test_executor_failure_captured(self):
         async def failing_executor(agent, task):
@@ -215,3 +276,69 @@ class TestSwarmCoordinator:
         coord = SwarmCoordinator(agents, OrchestrationPattern.ORCHESTRATOR_WORKER)
         results = await coord.coordinate(tasks, failing_executor)
         assert "FAILED" in list(results.values())[0]
+
+    async def test_no_agents_orchestrator_worker(self):
+        """No agents in orchestrator-worker pattern: all tasks FAILED."""
+        tasks = _make_tasks(2)
+        coord = SwarmCoordinator([], OrchestrationPattern.ORCHESTRATOR_WORKER)
+        results = await coord.coordinate(tasks, _mock_executor)
+        assert len(results) == 2
+        for v in results.values():
+            assert "FAILED" in v
+
+    async def test_no_agents_swarm(self):
+        """No agents in swarm pattern: all tasks FAILED."""
+        tasks = _make_tasks(2)
+        coord = SwarmCoordinator([], OrchestrationPattern.SWARM)
+        results = await coord.coordinate(tasks, _mock_executor)
+        assert len(results) == 2
+        for v in results.values():
+            assert "FAILED" in v
+
+    async def test_no_agents_hierarchical(self):
+        """No agents in hierarchical pattern: all tasks FAILED."""
+        tasks = _make_tasks(2)
+        coord = SwarmCoordinator([], OrchestrationPattern.HIERARCHICAL)
+        results = await coord.coordinate(tasks, _mock_executor)
+        assert len(results) == 2
+        for v in results.values():
+            assert "FAILED" in v
+
+    async def test_no_agents_mesh(self):
+        """No agents in mesh pattern: all tasks FAILED."""
+        tasks = _make_tasks(1)
+        coord = SwarmCoordinator([], OrchestrationPattern.MESH)
+        results = await coord.coordinate(tasks, _mock_executor)
+        assert len(results) == 1
+        for v in results.values():
+            assert "FAILED" in v
+
+    async def test_no_agents_pipeline(self):
+        """No agents in pipeline pattern: all tasks FAILED."""
+        tasks = _make_tasks(1)
+        coord = SwarmCoordinator([], OrchestrationPattern.PIPELINE)
+        results = await coord.coordinate(tasks, _mock_executor)
+        assert len(results) == 1
+        for v in results.values():
+            assert "FAILED" in v
+
+    async def test_no_tasks_returns_empty(self):
+        """No tasks for any pattern returns empty results."""
+        agents = _make_agents(2)
+        for pattern in OrchestrationPattern:
+            coord = SwarmCoordinator(agents, pattern)
+            results = await coord.coordinate([], _mock_executor)
+            assert results == {}
+
+    async def test_hierarchical_executor_failure(self):
+        """Hierarchical pattern captures executor failure as FAILED."""
+        async def failing_executor(agent, task):
+            raise RuntimeError("specialist crashed")
+
+        agents = _make_agents(3)
+        tasks = _make_tasks(2)
+        coord = SwarmCoordinator(agents, OrchestrationPattern.HIERARCHICAL)
+        results = await coord.coordinate(tasks, failing_executor)
+        assert len(results) == 2
+        for v in results.values():
+            assert "FAILED" in v
