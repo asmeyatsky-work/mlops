@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "mlops-orchestrator": {
+      "command": "python",
+      "args": ["-m", "mlops_orchestrator.presentation.cli.main"],
+      "env": {
+        "MLOPS_GCP_PROJECT": "mlops-491617",
+        "MLOPS_GCP_LOCATION": "us-central1",
+        "MLOPS_USE_STUBS": "true",
+        "MLOPS_TRANSPORT": "stdio"
+      }
+    }
+  }
+}
