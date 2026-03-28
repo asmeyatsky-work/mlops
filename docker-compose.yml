@@ -1,0 +1,13 @@
+services:
+  mlops-orchestrator:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - MLOPS_GCP_PROJECT=${MLOPS_GCP_PROJECT:-}
+      - MLOPS_GCP_LOCATION=${MLOPS_GCP_LOCATION:-us-central1}
+      - MLOPS_USE_STUBS=${MLOPS_USE_STUBS:-true}
+      - MLOPS_TRANSPORT=sse
+    volumes:
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/app/credentials.json:ro
+    restart: unless-stopped

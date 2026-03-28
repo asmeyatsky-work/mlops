@@ -19,8 +19,11 @@ def main() -> None:
         from mlops_orchestrator.infrastructure.config.settings import Settings
         from mlops_orchestrator.infrastructure.config.container import DependencyContainer
         from mlops_orchestrator.infrastructure.mcp_servers.server import create_mlops_server
+        from mlops_orchestrator.infrastructure.logging_config import configure_logging
 
         settings = Settings()
+        configure_logging(json_output=True)
+
         if settings.use_stubs:
             print("WARNING: Running with stub adapters (MLOPS_USE_STUBS=true). "
                   "GCP operations will be simulated.", file=sys.stderr)

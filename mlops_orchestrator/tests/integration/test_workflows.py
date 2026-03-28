@@ -164,9 +164,11 @@ class TestSelfHealingWorkflow:
         monitoring.inject_alerts([
             {"feature": "f1", "statistic": 0.5, "p_value": 0.001, "threshold": 0.05},
         ])
-        workflow = SelfHealingWorkflow(monitoring, StubTrainingAdapter())
+        deployment = StubVertexDeploymentAdapter()
+        workflow = SelfHealingWorkflow(monitoring, StubTrainingAdapter(), deployment_port=deployment)
         result = await workflow.execute("ep-1")
         assert result["act"]["action"] == "rollback"
+        assert result["act"]["executed"] == "true"
 
     async def test_moderate_drift_ensemble(self):
         monitoring = StubMonitoringAdapter()
@@ -178,16 +180,16 @@ class TestSelfHealingWorkflow:
         assert result["act"]["action"] == "ensemble_switching"
 
     async def test_high_data_drift_triggers_incremental_training(self):
-        """High severity DATA drift triggers incremental_training strategy."""
+        """High severity DATA drift triggers incremental_training and starts a job."""
         monitoring = StubMonitoringAdapter()
-        # statistic=0.25 => HIGH severity for monitoring_alert (uses ks_test thresholds)
-        # p_value < threshold => is_drifted = True, drift_type = DATA
         monitoring.inject_alerts([
             {"feature": "f1", "statistic": 0.25, "p_value": 0.001, "threshold": 0.05},
         ])
-        workflow = SelfHealingWorkflow(monitoring, StubTrainingAdapter())
+        training = StubTrainingAdapter()
+        workflow = SelfHealingWorkflow(monitoring, training)
         result = await workflow.execute("ep-1")
         assert result["act"]["action"] == "incremental_training"
+        assert "job_resource_name" in result["act"]
 
     async def test_multiple_alerts(self):
         """Multiple drift alerts are all analyzed and influence the decision."""

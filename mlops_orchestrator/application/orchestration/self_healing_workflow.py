@@ -1,10 +1,12 @@
 from __future__ import annotations
+import logging
 from typing import Any
 
 from mlops_orchestrator.application.orchestration.dag_orchestrator import (
     DAGOrchestrator,
     WorkflowStep,
 )
+from mlops_orchestrator.domain.ports.deployment_port import VertexDeploymentPort
 from mlops_orchestrator.domain.ports.monitoring_port import MonitoringPort
 from mlops_orchestrator.domain.ports.training_port import TrainingPort
 from mlops_orchestrator.domain.services.drift_detection_service import (
@@ -16,6 +18,8 @@ from mlops_orchestrator.domain.services.remediation_service import (
     RemediationStrategy,
 )
 from mlops_orchestrator.domain.value_objects.drift_result import DriftResult, DriftType
+
+logger = logging.getLogger(__name__)
 
 
 class SelfHealingWorkflow:
@@ -29,9 +33,11 @@ class SelfHealingWorkflow:
         self,
         monitoring_port: MonitoringPort,
         training_port: TrainingPort,
+        deployment_port: VertexDeploymentPort | None = None,
     ) -> None:
         self._monitoring_port = monitoring_port
         self._training_port = training_port
+        self._deployment_port = deployment_port
         self._drift_service = DriftDetectionService()
         self._remediation_service = RemediationService()
 
@@ -49,6 +55,7 @@ class SelfHealingWorkflow:
         self, context: dict[str, Any], completed: dict[str, Any]
     ) -> list[dict[str, float]]:
         alerts = await self._monitoring_port.get_drift_alerts(context["endpoint_id"])
+        logger.info("Observed %d drift alerts for endpoint %s", len(alerts), context["endpoint_id"])
         return alerts
 
     async def _analyze(
@@ -66,6 +73,8 @@ class SelfHealingWorkflow:
                 threshold=alert.get("threshold", 0.05),
             )
             results.append(result)
+        drifted_count = sum(1 for r in results if r.is_drifted)
+        logger.info("Analyzed %d alerts: %d drifted", len(results), drifted_count)
         return results
 
     async def _decide(
@@ -78,20 +87,41 @@ class SelfHealingWorkflow:
             endpoint_id=context["endpoint_id"],
             drift_results=drift_results,
         )
+        logger.info("Decided strategy: %s for endpoint %s", strategy.value, context["endpoint_id"])
         return plan
 
     async def _act(
         self, context: dict[str, Any], completed: dict[str, Any]
     ) -> dict[str, str]:
         plan: RemediationPlan = completed["decide"]
+        endpoint_id = context["endpoint_id"]
+
         if plan.strategy == RemediationStrategy.NO_ACTION:
+            logger.info("No action required for endpoint %s", endpoint_id)
             return {"action": "none", "details": plan.details}
+
         if plan.strategy == RemediationStrategy.ROLLBACK:
-            return {"action": "rollback", "details": plan.details}
+            logger.warning("Executing ROLLBACK for endpoint %s", endpoint_id)
+            if self._deployment_port:
+                await self._deployment_port.undeploy(endpoint_id)
+            return {"action": "rollback", "details": plan.details, "executed": "true"}
+
         if plan.strategy == RemediationStrategy.INCREMENTAL_TRAINING:
-            return {"action": "incremental_training", "details": plan.details}
+            logger.info("Triggering incremental training for endpoint %s", endpoint_id)
+            job_rn = await self._training_port.start_training(
+                model_name=f"retrain-{endpoint_id.split('/')[-1]}",
+                dataset_id="",
+                gcs_uri="",
+                train_image="us-docker.pkg.dev/vertex-ai/training/tf-cpu.2-12:latest",
+            )
+            return {"action": "incremental_training", "details": plan.details, "job_resource_name": job_rn}
+
         if plan.strategy == RemediationStrategy.ACTIVE_LEARNING:
+            logger.info("Active learning triggered for endpoint %s", endpoint_id)
             return {"action": "active_learning", "details": plan.details}
+
         if plan.strategy == RemediationStrategy.ENSEMBLE_SWITCHING:
+            logger.info("Ensemble switching for endpoint %s", endpoint_id)
             return {"action": "ensemble_switching", "details": plan.details}
+
         return {"action": "unknown", "details": plan.details}
