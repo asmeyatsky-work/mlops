@@ -3,6 +3,8 @@ import asyncio
 import re
 from datetime import datetime, UTC
 
+from mlops_orchestrator.infrastructure.adapters.retry import with_retry
+
 
 class CloudLoggingAuditAdapter:
     """Real Cloud Logging audit adapter. Implements AuditLogPort."""
@@ -12,6 +14,7 @@ class CloudLoggingAuditAdapter:
         self._client = cloud_logging.Client(project=project)
         self._logger = self._client.logger("mlops-orchestrator-audit")
 
+    @with_retry(max_attempts=3)
     async def log_action(
         self, action: str, resource_id: str, details: dict[str, str]
     ) -> None:
@@ -25,6 +28,7 @@ class CloudLoggingAuditAdapter:
             },
         )
 
+    @with_retry(max_attempts=3)
     async def get_audit_trail(self, resource_id: str) -> list[dict[str, str]]:
         # Sanitize resource_id to prevent log filter injection
         sanitized = re.sub(r'[^a-zA-Z0-9/_\-.]', '', resource_id)

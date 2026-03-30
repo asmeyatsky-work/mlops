@@ -22,4 +22,25 @@ class Settings(BaseSettings):
         description="MCP transport: stdio or sse",
     )
 
+    # Billing / Cost
+    billing_table: str = Field(
+        default="",
+        description="Fully-qualified BigQuery billing export table",
+    )
+
+    # Alerting
+    slack_webhook_url: str = Field(default="", description="Slack incoming webhook URL")
+    pagerduty_routing_key: str = Field(default="", description="PagerDuty Events API v2 routing key")
+    alert_email_smtp_host: str = Field(default="", description="SMTP host for email alerts")
+    alert_email_smtp_port: int = Field(default=587, description="SMTP port")
+    alert_email_sender: str = Field(default="", description="Email alert sender address")
+    alert_email_recipients: str = Field(default="", description="Comma-separated alert recipient emails")
+    alert_email_username: str = Field(default="", description="SMTP username")
+    alert_email_password: str = Field(default="", description="SMTP password")
+
+    # Auth
+    auth_enabled: bool = Field(default=False, description="Enable API key / JWT auth on MCP server")
+    auth_api_keys: str = Field(default="", description="Comma-separated API keys")
+    auth_jwt_secret: str = Field(default="", description="JWT signing secret (HS256)")
+
     model_config = {"env_prefix": "MLOPS_"}

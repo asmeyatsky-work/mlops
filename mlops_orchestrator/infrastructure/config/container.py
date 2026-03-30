@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from mlops_orchestrator.application.commands.batch_prediction_command import (
+    BatchPredictionCommand,
+)
 from mlops_orchestrator.application.commands.configure_monitoring_command import (
     ConfigureMonitoringCommand,
 )
@@ -11,6 +14,9 @@ from mlops_orchestrator.application.commands.deploy_gke_command import (
 )
 from mlops_orchestrator.application.commands.deploy_vertex_command import (
     DeployToVertexCommand,
+)
+from mlops_orchestrator.application.commands.model_registry_command import (
+    ModelRegistryCommand,
 )
 from mlops_orchestrator.application.commands.train_model_command import (
     TrainModelCommand,
@@ -33,6 +39,7 @@ class DependencyContainer:
             self._build_stub_adapters()
         else:
             self._build_gcp_adapters()
+        self._build_alerting()
 
     def _build_stub_adapters(self) -> None:
         from mlops_orchestrator.infrastructure.adapters.stub_dataset_adapter import (
@@ -54,6 +61,12 @@ class DependencyContainer:
             StubCostAdapter,
             StubSecurityAdapter,
         )
+        from mlops_orchestrator.infrastructure.adapters.stub_batch_prediction_adapter import (
+            StubBatchPredictionAdapter,
+        )
+        from mlops_orchestrator.infrastructure.adapters.stub_model_registry_adapter import (
+            StubModelRegistryAdapter,
+        )
 
         self._dataset_port = StubDatasetAdapter()
         self._training_port = StubTrainingAdapter()
@@ -64,6 +77,8 @@ class DependencyContainer:
         self._audit_log = StubAuditLogAdapter()
         self._cost_port = StubCostAdapter()
         self._security_port = StubSecurityAdapter()
+        self._batch_prediction_port = StubBatchPredictionAdapter()
+        self._model_registry_port = StubModelRegistryAdapter()
 
     def _build_gcp_adapters(self) -> None:
         from mlops_orchestrator.infrastructure.adapters.vertex_dataset_adapter import (
@@ -91,6 +106,12 @@ class DependencyContainer:
             InMemoryEventBus,
             StubCostAdapter,
         )
+        from mlops_orchestrator.infrastructure.adapters.vertex_batch_prediction_adapter import (
+            VertexBatchPredictionAdapter,
+        )
+        from mlops_orchestrator.infrastructure.adapters.vertex_model_registry_adapter import (
+            VertexModelRegistryAdapter,
+        )
 
         project = self._settings.gcp_project
         location = self._settings.gcp_location
@@ -102,8 +123,63 @@ class DependencyContainer:
         self._monitoring_port = VertexMonitoringAdapter(project=project, location=location)
         self._event_bus = InMemoryEventBus()
         self._audit_log = CloudLoggingAuditAdapter(project=project)
-        self._cost_port = StubCostAdapter()  # Real cost adapter can be added later
-        self._security_port = GcpSecurityAdapter()
+        self._security_port = GcpSecurityAdapter(project=project)
+        self._batch_prediction_port = VertexBatchPredictionAdapter(project=project, location=location)
+        self._model_registry_port = VertexModelRegistryAdapter(project=project, location=location)
+
+        # Use real cost adapter if billing table is configured
+        if self._settings.billing_table:
+            from mlops_orchestrator.infrastructure.adapters.billing_cost_adapter import (
+                BigQueryCostAdapter,
+            )
+            self._cost_port = BigQueryCostAdapter(
+                project=project, billing_table=self._settings.billing_table
+            )
+        else:
+            self._cost_port = StubCostAdapter()
+
+    def _build_alerting(self) -> None:
+        """Build alerting adapters based on configured channels."""
+        from mlops_orchestrator.infrastructure.adapters.alerting_adapters import (
+            CompositeAlertAdapter,
+            StubAlertAdapter,
+        )
+
+        adapters: list = []
+
+        if self._settings.slack_webhook_url:
+            from mlops_orchestrator.infrastructure.adapters.alerting_adapters import (
+                SlackAlertAdapter,
+            )
+            adapters.append(SlackAlertAdapter(self._settings.slack_webhook_url))
+
+        if self._settings.pagerduty_routing_key:
+            from mlops_orchestrator.infrastructure.adapters.alerting_adapters import (
+                PagerDutyAlertAdapter,
+            )
+            adapters.append(PagerDutyAlertAdapter(self._settings.pagerduty_routing_key))
+
+        if self._settings.alert_email_smtp_host and self._settings.alert_email_recipients:
+            from mlops_orchestrator.infrastructure.adapters.alerting_adapters import (
+                EmailAlertAdapter,
+            )
+            adapters.append(
+                EmailAlertAdapter(
+                    smtp_host=self._settings.alert_email_smtp_host,
+                    smtp_port=self._settings.alert_email_smtp_port,
+                    sender=self._settings.alert_email_sender,
+                    recipients=self._settings.alert_email_recipients.split(","),
+                    username=self._settings.alert_email_username,
+                    password=self._settings.alert_email_password,
+                )
+            )
+
+        if adapters:
+            self._alerting_port = CompositeAlertAdapter(adapters)
+        elif self._settings.use_stubs:
+            self._alerting_port = StubAlertAdapter()
+        else:
+            self._alerting_port = None  # type: ignore[assignment]
 
     # ─── Command factories ───
 
@@ -139,6 +215,19 @@ class DependencyContainer:
         return ConfigureMonitoringCommand(
             monitoring_port=self._monitoring_port,
             event_bus=self._event_bus,
+            audit_log=self._audit_log,
+        )
+
+    def batch_prediction_command(self) -> BatchPredictionCommand:
+        return BatchPredictionCommand(
+            batch_port=self._batch_prediction_port,
+            event_bus=self._event_bus,
+            audit_log=self._audit_log,
+        )
+
+    def model_registry_command(self) -> ModelRegistryCommand:
+        return ModelRegistryCommand(
+            registry_port=self._model_registry_port,
             audit_log=self._audit_log,
         )
 
@@ -179,6 +268,18 @@ class DependencyContainer:
     @property
     def audit_log(self):
         return self._audit_log
+
+    @property
+    def alerting_port(self):
+        return self._alerting_port
+
+    @property
+    def batch_prediction_port(self):
+        return self._batch_prediction_port
+
+    @property
+    def model_registry_port(self):
+        return self._model_registry_port
 
     @property
     def settings(self) -> Settings:

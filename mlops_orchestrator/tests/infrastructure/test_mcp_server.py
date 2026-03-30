@@ -6,6 +6,7 @@ import pytest
 from mlops_orchestrator.infrastructure.config.settings import Settings
 from mlops_orchestrator.infrastructure.config.container import DependencyContainer
 from mlops_orchestrator.infrastructure.mcp_servers.server import create_mlops_server
+from mlops_orchestrator.infrastructure.auth.auth_middleware import AuthConfig
 
 
 @pytest.fixture
@@ -19,6 +20,15 @@ class TestMcpServerCreation:
         assert mcp is not None
         assert mcp.name == "mlops-orchestrator"
 
+    def test_server_with_auth_config(self, container):
+        auth = AuthConfig(enabled=True, api_keys=("test-key",))
+        mcp = create_mlops_server(container, auth_config=auth)
+        assert mcp is not None
+
+    def test_server_without_auth_config(self, container):
+        mcp = create_mlops_server(container, auth_config=None)
+        assert mcp is not None
+
 
 class TestMcpTools:
     async def test_tools_registered(self, container):
@@ -29,6 +39,9 @@ class TestMcpTools:
         assert "deploy_to_vertex" in tools
         assert "deploy_to_gke" in tools
         assert "configure_monitoring" in tools
+        assert "batch_predict" in tools
+        assert "register_model" in tools
+        assert "promote_model" in tools
 
     async def test_create_dataset_executes(self, container):
         mcp = create_mlops_server(container)
@@ -73,6 +86,49 @@ class TestMcpTools:
         )
         assert result["monitoring_enabled"] is True
 
+    async def test_batch_predict_executes(self, container):
+        mcp = create_mlops_server(container)
+        result = await mcp._tool_manager.call_tool(
+            "batch_predict",
+            {
+                "model_resource_name": "projects/p/models/m",
+                "input_uri": "gs://bucket/input",
+                "output_uri": "gs://bucket/output",
+            },
+        )
+        assert result["status"] == "SUBMITTED"
+        assert "job_resource_name" in result
+
+    async def test_register_model_executes(self, container):
+        mcp = create_mlops_server(container)
+        result = await mcp._tool_manager.call_tool(
+            "register_model",
+            {
+                "display_name": "test-model",
+                "artifact_uri": "gs://bucket/model",
+            },
+        )
+        assert result["version"] == 1
+        assert result["stage"] == "development"
+
+    async def test_promote_model_executes(self, container):
+        mcp = create_mlops_server(container)
+        # First register a model
+        await mcp._tool_manager.call_tool(
+            "register_model",
+            {"display_name": "test-model", "artifact_uri": "gs://bucket/model"},
+        )
+        # Then promote it
+        result = await mcp._tool_manager.call_tool(
+            "promote_model",
+            {
+                "model_id": "projects/stub-project/locations/us-central1/models/test-model",
+                "version": 1,
+                "stage": "production",
+            },
+        )
+        assert result["stage"] == "production"
+
     async def test_tool_error_returns_error_dict(self, container):
         """Passing invalid args should return error dict, not crash."""
         mcp = create_mlops_server(container)
@@ -96,3 +152,11 @@ class TestMcpTools:
         resources = mcp._resource_manager.list_resources()
         session_resource = next((r for r in resources if "session" in str(r.uri)), None)
         assert session_resource is not None
+
+
+class TestMcpResources:
+    async def test_resources_registered(self, container):
+        mcp = create_mlops_server(container)
+        resources = mcp._resource_manager.list_resources()
+        resource_uris = [str(r.uri) for r in resources]
+        assert any("session" in u for u in resource_uris)

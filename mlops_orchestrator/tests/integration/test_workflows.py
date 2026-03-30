@@ -30,6 +30,7 @@ from mlops_orchestrator.infrastructure.adapters.stub_monitoring_adapter import S
 from mlops_orchestrator.infrastructure.adapters.stub_infrastructure_adapters import (
     InMemoryEventBus, StubAuditLogAdapter,
 )
+from mlops_orchestrator.infrastructure.adapters.alerting_adapters import StubAlertAdapter
 
 
 # ── Failing port helpers for pipeline failure tests ──────────────────
@@ -204,6 +205,54 @@ class TestSelfHealingWorkflow:
         assert len(result["analyze"]) == 2
         # The action should be determined by the most severe drift
         assert result["act"]["action"] != "none"
+
+    async def test_drift_sends_alert(self):
+        """When drift is detected, an alert is sent via the alerting port."""
+        monitoring = StubMonitoringAdapter()
+        monitoring.inject_alerts([
+            {"feature": "f1", "statistic": 0.5, "p_value": 0.001, "threshold": 0.05},
+        ])
+        alerting = StubAlertAdapter()
+        deployment = StubVertexDeploymentAdapter()
+        workflow = SelfHealingWorkflow(
+            monitoring, StubTrainingAdapter(),
+            deployment_port=deployment,
+            alerting_port=alerting,
+        )
+        await workflow.execute("ep-1")
+        # Should have received drift detection alert + rollback alert
+        assert len(alerting.sent_alerts) >= 1
+        titles = [a.title for a in alerting.sent_alerts]
+        assert "Model Drift Detected" in titles
+
+    async def test_no_drift_no_alert(self):
+        """When no drift is detected, no alert is sent."""
+        monitoring = StubMonitoringAdapter()
+        alerting = StubAlertAdapter()
+        workflow = SelfHealingWorkflow(
+            monitoring, StubTrainingAdapter(),
+            alerting_port=alerting,
+        )
+        await workflow.execute("ep-1")
+        assert len(alerting.sent_alerts) == 0
+
+    async def test_rollback_sends_critical_alert(self):
+        """Rollback action sends a critical alert."""
+        monitoring = StubMonitoringAdapter()
+        monitoring.inject_alerts([
+            {"feature": "f1", "statistic": 0.5, "p_value": 0.001, "threshold": 0.05},
+        ])
+        alerting = StubAlertAdapter()
+        deployment = StubVertexDeploymentAdapter()
+        workflow = SelfHealingWorkflow(
+            monitoring, StubTrainingAdapter(),
+            deployment_port=deployment,
+            alerting_port=alerting,
+        )
+        await workflow.execute("ep-1")
+        rollback_alerts = [a for a in alerting.sent_alerts if a.title == "Model Rollback Executed"]
+        assert len(rollback_alerts) == 1
+        assert rollback_alerts[0].severity == "critical"
 
 
 # ── SwarmIntegration ─────────────────────────────────────────────────

@@ -25,6 +25,27 @@ class TestSettings:
         assert s.use_stubs is True
         assert s.transport == "sse"
 
+    def test_alerting_settings(self, monkeypatch):
+        monkeypatch.setenv("MLOPS_SLACK_WEBHOOK_URL", "https://hooks.slack.com/test")
+        monkeypatch.setenv("MLOPS_PAGERDUTY_ROUTING_KEY", "pd-key-123")
+        s = Settings()
+        assert s.slack_webhook_url == "https://hooks.slack.com/test"
+        assert s.pagerduty_routing_key == "pd-key-123"
+
+    def test_auth_settings(self, monkeypatch):
+        monkeypatch.setenv("MLOPS_AUTH_ENABLED", "true")
+        monkeypatch.setenv("MLOPS_AUTH_API_KEYS", "key1,key2")
+        monkeypatch.setenv("MLOPS_AUTH_JWT_SECRET", "secret123")
+        s = Settings()
+        assert s.auth_enabled is True
+        assert s.auth_api_keys == "key1,key2"
+        assert s.auth_jwt_secret == "secret123"
+
+    def test_billing_table_setting(self, monkeypatch):
+        monkeypatch.setenv("MLOPS_BILLING_TABLE", "project.dataset.table")
+        s = Settings()
+        assert s.billing_table == "project.dataset.table"
+
 
 class TestDependencyContainer:
     def test_stub_wiring(self):
@@ -36,6 +57,8 @@ class TestDependencyContainer:
         assert container.monitoring_port is not None
         assert container.event_bus is not None
         assert container.audit_log is not None
+        assert container.batch_prediction_port is not None
+        assert container.model_registry_port is not None
 
     def test_command_factories(self):
         container = DependencyContainer(Settings(use_stubs=True))
@@ -44,6 +67,8 @@ class TestDependencyContainer:
         assert container.deploy_vertex_command() is not None
         assert container.deploy_gke_command() is not None
         assert container.configure_monitoring_command() is not None
+        assert container.batch_prediction_command() is not None
+        assert container.model_registry_command() is not None
 
     def test_query_factories(self):
         container = DependencyContainer(Settings(use_stubs=True))
@@ -64,3 +89,18 @@ class TestDependencyContainer:
         deploy1 = container.deploy_vertex_command()
         deploy2 = container.deploy_vertex_command()
         assert deploy1 is not deploy2
+
+    def test_alerting_port_stub(self):
+        """Stub mode creates a stub alerting port."""
+        container = DependencyContainer(Settings(use_stubs=True))
+        assert container.alerting_port is not None
+
+    def test_batch_prediction_command_factory(self):
+        container = DependencyContainer(Settings(use_stubs=True))
+        cmd = container.batch_prediction_command()
+        assert cmd is not None
+
+    def test_model_registry_command_factory(self):
+        container = DependencyContainer(Settings(use_stubs=True))
+        cmd = container.model_registry_command()
+        assert cmd is not None

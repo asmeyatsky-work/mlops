@@ -11,11 +11,18 @@ from mlops_orchestrator.domain.ports.infrastructure_ports import (
     EventBusPort,
     SecurityPort,
 )
+from mlops_orchestrator.domain.ports.alerting_port import Alert, AlertingPort
+from mlops_orchestrator.domain.ports.batch_prediction_port import BatchPredictionPort
+from mlops_orchestrator.domain.ports.model_registry_port import ModelRegistryPort
 
 __all__ = [
+    "Alert",
+    "AlertingPort",
+    "BatchPredictionPort",
     "DatasetPort",
     "TrainingPort",
     "GkeDeploymentPort",
+    "ModelRegistryPort",
     "VertexDeploymentPort",
     "MonitoringPort",
     "AuditLogPort",

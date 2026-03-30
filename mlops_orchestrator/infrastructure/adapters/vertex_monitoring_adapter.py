@@ -1,6 +1,8 @@
 from __future__ import annotations
 import asyncio
 
+from mlops_orchestrator.infrastructure.adapters.retry import with_retry
+
 
 class VertexMonitoringAdapter:
     """Real Vertex Model Monitoring adapter. Implements MonitoringPort."""
@@ -11,6 +13,7 @@ class VertexMonitoringAdapter:
         from google.cloud import aiplatform
         aiplatform.init(project=project, location=location)
 
+    @with_retry(max_attempts=3)
     async def configure_monitoring(
         self, endpoint_id: str, drift_threshold: float, skew_threshold: float
     ) -> bool:
@@ -38,6 +41,7 @@ class VertexMonitoringAdapter:
         except Exception:
             return False
 
+    @with_retry(max_attempts=3)
     async def get_monitoring_status(self, endpoint_id: str) -> dict[str, str]:
         from google.cloud import aiplatform
 
@@ -49,5 +53,6 @@ class VertexMonitoringAdapter:
             return {"status": str(jobs[0].state), "endpoint_id": endpoint_id}
         return {"status": "NOT_CONFIGURED", "endpoint_id": endpoint_id}
 
+    @with_retry(max_attempts=3)
     async def get_drift_alerts(self, endpoint_id: str) -> list[dict[str, float]]:
         return []

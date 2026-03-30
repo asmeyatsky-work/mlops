@@ -6,6 +6,7 @@ from mlops_orchestrator.application.orchestration.dag_orchestrator import (
     DAGOrchestrator,
     WorkflowStep,
 )
+from mlops_orchestrator.domain.ports.alerting_port import Alert, AlertingPort
 from mlops_orchestrator.domain.ports.deployment_port import VertexDeploymentPort
 from mlops_orchestrator.domain.ports.monitoring_port import MonitoringPort
 from mlops_orchestrator.domain.ports.training_port import TrainingPort
@@ -27,6 +28,7 @@ class SelfHealingWorkflow:
     Self-healing closed-loop: Observe -> Analyze -> Decide -> Act.
 
     Monitors deployed models for drift and triggers automated remediation.
+    Sends alerts through configured alerting channels.
     """
 
     def __init__(
@@ -34,10 +36,12 @@ class SelfHealingWorkflow:
         monitoring_port: MonitoringPort,
         training_port: TrainingPort,
         deployment_port: VertexDeploymentPort | None = None,
+        alerting_port: AlertingPort | None = None,
     ) -> None:
         self._monitoring_port = monitoring_port
         self._training_port = training_port
         self._deployment_port = deployment_port
+        self._alerting_port = alerting_port
         self._drift_service = DriftDetectionService()
         self._remediation_service = RemediationService()
 
@@ -75,6 +79,23 @@ class SelfHealingWorkflow:
             results.append(result)
         drifted_count = sum(1 for r in results if r.is_drifted)
         logger.info("Analyzed %d alerts: %d drifted", len(results), drifted_count)
+
+        # Send alert if drift detected
+        if drifted_count > 0 and self._alerting_port:
+            severity = "critical" if drifted_count > 2 else "warning"
+            await self._alerting_port.send_alert(
+                Alert(
+                    title="Model Drift Detected",
+                    message=f"{drifted_count} feature(s) drifted on endpoint {context['endpoint_id']}",
+                    severity=severity,
+                    metadata={
+                        "endpoint_id": context["endpoint_id"],
+                        "drifted_features": str(drifted_count),
+                        "total_features": str(len(results)),
+                    },
+                )
+            )
+
         return results
 
     async def _decide(
@@ -104,6 +125,15 @@ class SelfHealingWorkflow:
             logger.warning("Executing ROLLBACK for endpoint %s", endpoint_id)
             if self._deployment_port:
                 await self._deployment_port.undeploy(endpoint_id)
+            if self._alerting_port:
+                await self._alerting_port.send_alert(
+                    Alert(
+                        title="Model Rollback Executed",
+                        message=f"Rollback executed for endpoint {endpoint_id}: {plan.details}",
+                        severity="critical",
+                        metadata={"endpoint_id": endpoint_id, "action": "rollback"},
+                    )
+                )
             return {"action": "rollback", "details": plan.details, "executed": "true"}
 
         if plan.strategy == RemediationStrategy.INCREMENTAL_TRAINING:
@@ -114,6 +144,15 @@ class SelfHealingWorkflow:
                 gcs_uri="",
                 train_image="us-docker.pkg.dev/vertex-ai/training/tf-cpu.2-12:latest",
             )
+            if self._alerting_port:
+                await self._alerting_port.send_alert(
+                    Alert(
+                        title="Incremental Training Triggered",
+                        message=f"Retraining started for endpoint {endpoint_id}",
+                        severity="info",
+                        metadata={"endpoint_id": endpoint_id, "job": job_rn},
+                    )
+                )
             return {"action": "incremental_training", "details": plan.details, "job_resource_name": job_rn}
 
         if plan.strategy == RemediationStrategy.ACTIVE_LEARNING:

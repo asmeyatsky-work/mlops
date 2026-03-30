@@ -13,11 +13,19 @@ from mlops_orchestrator.application.dtos.deployment_dto import (
 )
 from mlops_orchestrator.application.dtos.training_dto import TrainModelRequest
 from mlops_orchestrator.application.session.session_state import SessionState
+from mlops_orchestrator.infrastructure.auth.auth_middleware import (
+    AuthConfig,
+    AuthMiddleware,
+    NoOpAuthMiddleware,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def create_mlops_server(container: object) -> FastMCP:
+def create_mlops_server(
+    container: object,
+    auth_config: AuthConfig | None = None,
+) -> FastMCP:
     """
     Create the MLOps Orchestrator MCP server.
 
@@ -29,6 +37,13 @@ def create_mlops_server(container: object) -> FastMCP:
     # Mutable holder for immutable session state, with lock for concurrent access
     state = [SessionState()]
     state_lock = asyncio.Lock()
+
+    # Auth middleware
+    if auth_config and auth_config.enabled:
+        auth = AuthMiddleware(auth_config)
+        logger.info("MCP server authentication enabled")
+    else:
+        auth = NoOpAuthMiddleware()  # type: ignore[assignment]
 
     from mlops_orchestrator.infrastructure.config.container import DependencyContainer
     c: DependencyContainer = container  # type: ignore[assignment]
@@ -109,6 +124,74 @@ def create_mlops_server(container: object) -> FastMCP:
             logger.exception("configure_monitoring failed")
             return {"error": str(e), "isError": True}
 
+    @mcp.tool()
+    async def batch_predict(
+        model_resource_name: str,
+        input_uri: str,
+        output_uri: str,
+        instance_type: str = "jsonl",
+    ) -> dict:
+        """Submit a Vertex AI BatchPredictionJob.
+        Returns job resource_name for async monitoring."""
+        try:
+            cmd = c.batch_prediction_command()
+            async with state_lock:
+                job_rn = await cmd.execute(
+                    model_resource_name=model_resource_name,
+                    input_uri=input_uri,
+                    output_uri=output_uri,
+                    instance_type=instance_type,
+                    session=state[0],
+                )
+                state[0] = state[0].add_job_handle(job_rn)
+            return {"job_resource_name": job_rn, "status": "SUBMITTED"}
+        except Exception as e:
+            logger.exception("batch_predict failed")
+            return {"error": str(e), "isError": True}
+
+    @mcp.tool()
+    async def register_model(
+        display_name: str,
+        artifact_uri: str,
+        serving_container_image: str = "us-docker.pkg.dev/vertex-ai/prediction/tf2-cpu.2-12:latest",
+        description: str = "",
+    ) -> dict:
+        """Register a model in the model registry, creating a new version if it already exists."""
+        try:
+            cmd = c.model_registry_command()
+            version = await cmd.execute(
+                display_name=display_name,
+                artifact_uri=artifact_uri,
+                serving_container_image=serving_container_image,
+                description=description,
+            )
+            async with state_lock:
+                state[0] = state[0].add_model_uri(version.resource_name)
+            return {
+                "model_id": version.model_id,
+                "version": version.version,
+                "resource_name": version.resource_name,
+                "stage": version.stage,
+            }
+        except Exception as e:
+            logger.exception("register_model failed")
+            return {"error": str(e), "isError": True}
+
+    @mcp.tool()
+    async def promote_model(model_id: str, version: int, stage: str) -> dict:
+        """Promote a model version to a lifecycle stage (staging, production, archived)."""
+        try:
+            registry = c.model_registry_port
+            promoted = await registry.promote_version(model_id, version, stage)
+            return {
+                "model_id": promoted.model_id,
+                "version": promoted.version,
+                "stage": promoted.stage,
+            }
+        except Exception as e:
+            logger.exception("promote_model failed")
+            return {"error": str(e), "isError": True}
+
     # ─── RESOURCES (read operations / queries) ───
 
     @mcp.resource("mlops://session")
@@ -130,6 +213,25 @@ def create_mlops_server(container: object) -> FastMCP:
         metrics = await query.get_project_metrics(project_id)
         recommendations = await query.get_recommendations(project_id)
         return json.dumps({"metrics": metrics, "recommendations": recommendations}, indent=2)
+
+    @mcp.resource("mlops://models/{model_id}")
+    async def get_model_versions(model_id: str) -> str:
+        """List all versions of a model in the registry."""
+        registry = c.model_registry_port
+        versions = await registry.list_versions(model_id)
+        return json.dumps(
+            [
+                {
+                    "model_id": v.model_id,
+                    "version": v.version,
+                    "resource_name": v.resource_name,
+                    "display_name": v.display_name,
+                    "stage": v.stage,
+                }
+                for v in versions
+            ],
+            indent=2,
+        )
 
     # ─── PROMPTS ───
 

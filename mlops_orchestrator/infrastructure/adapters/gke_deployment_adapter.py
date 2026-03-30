@@ -1,6 +1,8 @@
 from __future__ import annotations
 import asyncio
 
+from mlops_orchestrator.infrastructure.adapters.retry import with_retry
+
 
 class GkeDeploymentAdapter:
     """Real GKE Kubernetes deployment adapter. Implements GkeDeploymentPort."""
@@ -15,6 +17,7 @@ class GkeDeploymentAdapter:
             config.load_kube_config()
         self._apps_api = client.AppsV1Api()
 
+    @with_retry(max_attempts=3, base_delay=2.0)
     async def deploy(
         self, model_id: str, cluster_name: str, replica_count: int
     ) -> dict[str, str]:
@@ -54,6 +57,7 @@ class GkeDeploymentAdapter:
         )
         return {"deployment_name": deployment_name, "status": "DEPLOYED"}
 
+    @with_retry(max_attempts=3)
     async def get_deployment_status(
         self, cluster_name: str, deployment_name: str
     ) -> str:
@@ -71,6 +75,7 @@ class GkeDeploymentAdapter:
         except client.ApiException:
             return "NOT_FOUND"
 
+    @with_retry(max_attempts=3)
     async def delete_deployment(
         self, cluster_name: str, deployment_name: str
     ) -> None:

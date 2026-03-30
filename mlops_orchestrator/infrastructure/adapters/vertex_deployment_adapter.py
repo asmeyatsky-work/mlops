@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 
 from mlops_orchestrator.domain.value_objects.machine_spec import MachineSpec
+from mlops_orchestrator.infrastructure.adapters.retry import with_retry
 
 
 class VertexEndpointAdapter:
@@ -13,6 +14,7 @@ class VertexEndpointAdapter:
         from google.cloud import aiplatform
         aiplatform.init(project=project, location=location)
 
+    @with_retry(max_attempts=3)
     async def create_endpoint_and_deploy(
         self, model_id: str, endpoint_name: str, machine_spec: MachineSpec
     ) -> str:
@@ -31,12 +33,14 @@ class VertexEndpointAdapter:
         )
         return endpoint.resource_name
 
+    @with_retry(max_attempts=3)
     async def undeploy(self, endpoint_resource_name: str) -> None:
         from google.cloud import aiplatform
 
         endpoint = aiplatform.Endpoint(endpoint_resource_name)
         await asyncio.to_thread(endpoint.undeploy_all)
 
+    @with_retry(max_attempts=3)
     async def get_endpoint_status(self, endpoint_resource_name: str) -> str:
         from google.cloud import aiplatform
 

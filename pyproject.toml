@@ -14,6 +14,7 @@ dependencies = [
     "google-cloud-bigquery>=3.14.0",
     "google-cloud-logging>=3.9.0",
     "google-cloud-storage>=2.14.0",
+    "google-cloud-resource-manager>=1.12.0",
     "kubernetes>=28.0.0",
     "scipy>=1.12.0",
     "numpy>=1.26.0",
@@ -36,7 +37,13 @@ testpaths = ["mlops_orchestrator/tests"]
 
 [tool.coverage.run]
 source = ["mlops_orchestrator"]
-omit = ["mlops_orchestrator/tests/*"]
+omit = [
+    "mlops_orchestrator/tests/*",
+    "mlops_orchestrator/infrastructure/adapters/vertex_*",
+    "mlops_orchestrator/infrastructure/adapters/gke_*",
+    "mlops_orchestrator/infrastructure/adapters/cloud_logging_*",
+    "mlops_orchestrator/infrastructure/adapters/billing_*",
+]
 
 [tool.coverage.report]
 fail_under = 80

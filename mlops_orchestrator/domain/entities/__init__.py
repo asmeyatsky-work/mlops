@@ -6,8 +6,10 @@ from mlops_orchestrator.domain.entities.deployment import (
 )
 from mlops_orchestrator.domain.entities.monitoring_config import MonitoringConfig
 from mlops_orchestrator.domain.entities.agent import Agent, AgentRole, AgentTask
+from mlops_orchestrator.domain.entities.batch_prediction_job import BatchPredictionJob
 
 __all__ = [
+    "BatchPredictionJob",
     "ManagedDataset",
     "TrainingJob",
     "TRAIN_IMAGE",

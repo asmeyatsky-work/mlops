@@ -3,6 +3,7 @@ import asyncio
 
 from mlops_orchestrator.domain.entities.managed_dataset import ManagedDataset
 from mlops_orchestrator.domain.value_objects.bq_source import BigQuerySource
+from mlops_orchestrator.infrastructure.adapters.retry import with_retry
 
 
 class VertexDatasetAdapter:
@@ -14,6 +15,7 @@ class VertexDatasetAdapter:
         from google.cloud import aiplatform
         aiplatform.init(project=project, location=location)
 
+    @with_retry(max_attempts=3)
     async def create_dataset(self, bq_source: BigQuerySource, display_name: str) -> str:
         from google.cloud import aiplatform
 
@@ -25,6 +27,7 @@ class VertexDatasetAdapter:
         )
         return dataset.resource_name
 
+    @with_retry(max_attempts=3)
     async def get_dataset(self, resource_name: str) -> ManagedDataset | None:
         from google.cloud import aiplatform
 
@@ -38,6 +41,7 @@ class VertexDatasetAdapter:
         except Exception:
             return None
 
+    @with_retry(max_attempts=3)
     async def list_datasets(self) -> list[ManagedDataset]:
         from google.cloud import aiplatform
 
