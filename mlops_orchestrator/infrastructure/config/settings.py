@@ -43,4 +43,27 @@ class Settings(BaseSettings):
     auth_api_keys: str = Field(default="", description="Comma-separated API keys")
     auth_jwt_secret: str = Field(default="", description="JWT signing secret (HS256)")
 
+    # Compliance gate (EU AI Act). Off by default so tests and dev workflows
+    # do not need to seed governance records. Production startup refuses to
+    # boot unless this is explicitly enabled (see presentation.cli.main).
+    compliance_strict: bool = Field(
+        default=False,
+        description=(
+            "Enforce the EU AI Act compliance gate on deploys. PROHIBITED is "
+            "always blocked; HIGH-risk requires complete model card + controls."
+        ),
+    )
+
+    # Resilience
+    gcp_call_timeout_seconds: float = Field(
+        default=120.0, description="Hard timeout for each GCP SDK call"
+    )
+
+    # Deployment environment marker. Set to 'production' to fail-fast when auth
+    # is disabled and to refuse stub adapters at startup.
+    environment: Literal["development", "staging", "production"] = Field(
+        default="development",
+        description="Deployment environment (controls startup safety checks)",
+    )
+
     model_config = {"env_prefix": "MLOPS_"}

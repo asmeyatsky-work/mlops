@@ -79,6 +79,10 @@ class DependencyContainer:
         self._security_port = StubSecurityAdapter()
         self._batch_prediction_port = StubBatchPredictionAdapter()
         self._model_registry_port = StubModelRegistryAdapter()
+        from mlops_orchestrator.infrastructure.adapters.in_memory_governance_adapter import (
+            InMemoryGovernanceAdapter,
+        )
+        self._governance_port = InMemoryGovernanceAdapter()
 
     def _build_gcp_adapters(self) -> None:
         from mlops_orchestrator.infrastructure.adapters.vertex_dataset_adapter import (
@@ -126,6 +130,13 @@ class DependencyContainer:
         self._security_port = GcpSecurityAdapter(project=project)
         self._batch_prediction_port = VertexBatchPredictionAdapter(project=project, location=location)
         self._model_registry_port = VertexModelRegistryAdapter(project=project, location=location)
+        from mlops_orchestrator.infrastructure.adapters.in_memory_governance_adapter import (
+            InMemoryGovernanceAdapter,
+        )
+        # TODO: swap for a persistent governance backend (BigQuery / dedicated DB)
+        # once the production registry is provisioned. The in-memory adapter
+        # still enforces the gate when records are populated at startup.
+        self._governance_port = InMemoryGovernanceAdapter()
 
         # Use real cost adapter if billing table is configured
         if self._settings.billing_table:
@@ -202,6 +213,7 @@ class DependencyContainer:
             deployment_port=self._vertex_deployment_port,
             event_bus=self._event_bus,
             audit_log=self._audit_log,
+            governance_port=self._governance_port if self._settings.compliance_strict else None,
         )
 
     def deploy_gke_command(self) -> DeployToGkeCommand:
@@ -209,6 +221,7 @@ class DependencyContainer:
             deployment_port=self._gke_deployment_port,
             event_bus=self._event_bus,
             audit_log=self._audit_log,
+            governance_port=self._governance_port if self._settings.compliance_strict else None,
         )
 
     def configure_monitoring_command(self) -> ConfigureMonitoringCommand:
@@ -284,3 +297,7 @@ class DependencyContainer:
     @property
     def settings(self) -> Settings:
         return self._settings
+
+    @property
+    def governance_port(self):
+        return self._governance_port

@@ -126,3 +126,47 @@ class ComplianceService:
     def _has_transparency_obligation(self, purpose: str) -> bool:
         transparency_keywords = {"chatbot", "deepfake", "emotion_recognition", "biometric"}
         return any(kw in purpose.lower().replace(" ", "_") for kw in transparency_keywords)
+
+
+class ComplianceGateError(Exception):
+    """Raised when a deployment is blocked by the EU AI Act compliance gate."""
+
+
+class ComplianceGateService:
+    """Enforces compliance preconditions for deploying a model.
+
+    A deployment of a model classified as PROHIBITED is always blocked.
+    A HIGH-risk deployment requires a complete model card AND a non-empty
+    set of declared required controls. LIMITED requires transparency
+    disclosure recorded on the card. MINIMAL is allowed.
+    """
+
+    def evaluate(
+        self,
+        risk: RiskClassification | None,
+        card: ModelCard | None,
+    ) -> list[str]:
+        """Return a list of blocking reasons. Empty list == OK to deploy."""
+        reasons: list[str] = []
+        if risk is None:
+            reasons.append("missing risk classification (EU AI Act Article 6)")
+        elif risk.tier == RiskTier.PROHIBITED:
+            reasons.append(f"prohibited use case: {risk.justification}")
+        elif risk.tier == RiskTier.HIGH:
+            if not risk.required_controls:
+                reasons.append("high-risk model has no declared required controls")
+            if card is None or not card.is_complete:
+                reasons.append("high-risk model lacks complete model card (Article 11)")
+        elif risk.tier == RiskTier.LIMITED:
+            if card is None or not card.fairness_assessment:
+                reasons.append("limited-risk model missing transparency disclosure")
+        return reasons
+
+    def enforce(
+        self,
+        risk: RiskClassification | None,
+        card: ModelCard | None,
+    ) -> None:
+        reasons = self.evaluate(risk, card)
+        if reasons:
+            raise ComplianceGateError("; ".join(reasons))

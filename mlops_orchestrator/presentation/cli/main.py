@@ -28,9 +28,30 @@ def main() -> None:
         settings = Settings()
         configure_logging(json_output=True)
 
+        if settings.environment == "production":
+            if settings.use_stubs:
+                raise RuntimeError(
+                    "refusing to start: MLOPS_USE_STUBS=true is not permitted "
+                    "in production (MLOPS_ENVIRONMENT=production)"
+                )
+            if not settings.auth_enabled:
+                raise RuntimeError(
+                    "refusing to start: MLOPS_AUTH_ENABLED=true is required "
+                    "in production (MLOPS_ENVIRONMENT=production)"
+                )
+            if not settings.compliance_strict:
+                raise RuntimeError(
+                    "refusing to start: MLOPS_COMPLIANCE_STRICT=true is required "
+                    "in production (MLOPS_ENVIRONMENT=production)"
+                )
+
         if settings.use_stubs:
             print("WARNING: Running with stub adapters (MLOPS_USE_STUBS=true). "
                   "GCP operations will be simulated.", file=sys.stderr)
+
+        if not settings.auth_enabled:
+            print("WARNING: MCP authentication is DISABLED (MLOPS_AUTH_ENABLED=false). "
+                  "All callers can invoke all tools.", file=sys.stderr)
 
         # Build auth config from settings
         auth_config = AuthConfig(

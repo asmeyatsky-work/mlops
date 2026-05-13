@@ -180,9 +180,19 @@ class SwarmCoordinator:
             results[task.id] = stage_input
         return results
 
+    @staticmethod
+    def _tokens(text: str) -> set[str]:
+        """Whole-word tokens — defeats embedded-substring matching attacks
+        like a crafted description that contains 'security' as part of a
+        larger noun phrase to coerce specialist routing."""
+        import re
+
+        return {t for t in re.split(r"\W+", text.lower()) if t}
+
     def _find_specialist(self, task: AgentTask) -> Agent | None:
+        task_tokens = self._tokens(task.description)
         for agent in self._agents.values():
             for cap in agent.capabilities:
-                if cap.lower() in task.description.lower():
+                if cap.lower() in task_tokens:
                     return agent
         return None

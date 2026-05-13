@@ -14,20 +14,31 @@ class JobStatusQuery:
         return {"job_resource_name": job_resource_name, "status": status}
 
     async def poll_until_complete(
-        self, job_resource_name: str, interval_seconds: int = 60, timeout_seconds: int = 86400
+        self,
+        job_resource_name: str,
+        interval_seconds: int = 60,
+        timeout_seconds: int = 86400,
     ) -> dict[str, str]:
-        """Poll a training job until it reaches a terminal state."""
-        elapsed = 0
-        while elapsed < timeout_seconds:
-            status = await self._training_port.get_job_status(job_resource_name)
-            if status in {"SUCCEEDED", "FAILED", "CANCELLED"}:
-                result = {"job_resource_name": job_resource_name, "status": status}
-                if status == "SUCCEEDED":
-                    model_name = await self._training_port.get_model_resource_name(
-                        job_resource_name
-                    )
-                    result["model_resource_name"] = model_name
-                return result
-            await asyncio.sleep(interval_seconds)
-            elapsed += interval_seconds
-        return {"job_resource_name": job_resource_name, "status": "TIMEOUT"}
+        """Poll until terminal state with hard wall-clock timeout via wait_for."""
+
+        async def _poll() -> dict[str, str]:
+            while True:
+                status = await self._training_port.get_job_status(job_resource_name)
+                if status in {"SUCCEEDED", "FAILED", "CANCELLED"}:
+                    result: dict[str, str] = {
+                        "job_resource_name": job_resource_name,
+                        "status": status,
+                    }
+                    if status == "SUCCEEDED":
+                        result["model_resource_name"] = (
+                            await self._training_port.get_model_resource_name(
+                                job_resource_name
+                            )
+                        )
+                    return result
+                await asyncio.sleep(interval_seconds)
+
+        try:
+            return await asyncio.wait_for(_poll(), timeout=timeout_seconds)
+        except asyncio.TimeoutError:
+            return {"job_resource_name": job_resource_name, "status": "TIMEOUT"}
