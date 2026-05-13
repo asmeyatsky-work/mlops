@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     alert_email_username: str = Field(default="", description="SMTP username")
     alert_email_password: str = Field(default="", description="SMTP password")
 
+    # Allowed Host headers for the SSE transport (DNS-rebinding protection).
+    # Comma-separated. Behind a managed platform (Cloud Run, Knative) set
+    # this to the externally-served hostname.
+    allowed_hosts: str = Field(
+        default="",
+        description="Comma-separated allowed Host headers for SSE transport",
+    )
+
     # Auth
     auth_enabled: bool = Field(default=False, description="Enable API key / JWT auth on MCP server")
     auth_api_keys: str = Field(default="", description="Comma-separated API keys")

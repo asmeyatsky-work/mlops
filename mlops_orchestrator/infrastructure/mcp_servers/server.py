@@ -6,6 +6,7 @@ import time
 from typing import Any, Awaitable, Callable
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from mlops_orchestrator.application.dtos.dataset_dto import CreateDatasetRequest
 from mlops_orchestrator.application.dtos.deployment_dto import (
@@ -77,6 +78,7 @@ def _tool_call(
 def create_mlops_server(
     container: object,
     auth_config: AuthConfig | None = None,
+    allowed_hosts: list[str] | None = None,
 ) -> FastMCP:
     """Create the MLOps Orchestrator MCP server.
 
@@ -88,7 +90,14 @@ def create_mlops_server(
     call. This keeps concurrent tool invocations from serializing on long
     GCP operations.
     """
-    mcp = FastMCP("mlops-orchestrator")
+    transport_security = None
+    if allowed_hosts:
+        transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=list(allowed_hosts),
+            allowed_origins=[f"https://{h}" for h in allowed_hosts],
+        )
+    mcp = FastMCP("mlops-orchestrator", transport_security=transport_security)
 
     state: list[SessionState] = [SessionState()]
     state_lock = asyncio.Lock()

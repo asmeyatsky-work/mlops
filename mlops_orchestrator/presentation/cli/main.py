@@ -61,8 +61,35 @@ def main() -> None:
         )
 
         container = DependencyContainer(settings)
-        mcp = create_mlops_server(container, auth_config=auth_config)
-        mcp.run(transport=settings.transport)
+        allowed_hosts = [
+            h.strip() for h in settings.allowed_hosts.split(",") if h.strip()
+        ]
+        mcp = create_mlops_server(
+            container, auth_config=auth_config, allowed_hosts=allowed_hosts or None
+        )
+
+        if settings.transport == "stdio":
+            mcp.run(transport="stdio")
+            return
+
+        # SSE path — wrap with our auth middleware (FastMCP's own auth is OAuth-
+        # shaped; we use simple API keys / HS256 JWTs). Bind 0.0.0.0 so the
+        # container platform's external probes can reach us.
+        import os
+        import uvicorn
+        from mlops_orchestrator.infrastructure.auth.auth_middleware import AuthMiddleware
+
+        host = "0.0.0.0"
+        port = int(os.environ.get("PORT", mcp.settings.port))
+        app = mcp.sse_app()
+
+        if auth_config.enabled:
+            from mlops_orchestrator.infrastructure.auth.sse_auth_middleware import (
+                SSEAuthMiddleware,
+            )
+            app = SSEAuthMiddleware(app, AuthMiddleware(auth_config))
+
+        uvicorn.run(app, host=host, port=port, log_level="info")
     except Exception as e:
         print(f"Error starting MLOps Orchestrator: {e}", file=sys.stderr)
         sys.exit(1)
