@@ -25,9 +25,12 @@ mlops_orchestrator/
 - **Batch Prediction** — Submit and track Vertex AI BatchPredictionJobs via MCP tool
 - **Model Registry** — Model versioning, lifecycle promotion (development → staging → production → archived), and version comparison
 - **Session State Stitching** — Immutable state threading across MCP tool calls so the agent handles GCP resource plumbing
-- **Authentication** — API key and JWT (HS256) authentication with per-key tool-level authorization
-- **Retry & Resilience** — Exponential backoff with jitter on all GCP adapter calls for transient failure recovery
+- **Authentication** — API key + HS256 JWT, wired as ASGI middleware on the SSE transport (rejects bad/missing credentials with 401 before reaching the MCP handler). Per-key tool allowlist + per-agent RBAC enforced at every tool dispatch.
+- **Retry & Resilience** — Exponential backoff + full jitter, per-attempt `asyncio.wait_for` hard timeout, circuit breaker (CLOSED/OPEN/HALF_OPEN). MCP server captures session state under lock and runs I/O lock-free.
+- **Observability** — `correlation_id` contextvar threaded through every tool call and propagated into structured JSON logs; PII / secret redaction in log output; OpenTelemetry spans (optional via `[otel]` extra).
+- **EU AI Act Compliance Gate** — Deploy commands optionally consult a `ModelGovernancePort`; PROHIBITED is always blocked, HIGH-risk requires a complete model card + declared controls.
 - **FinOps** — Real cost tracking via BigQuery billing export with GPU idle detection and optimization recommendations
+- **Supply chain hardening** — Pinned upper bounds on every dep, `pip-audit`, CycloneDX SBOM, and Trivy container scan in CI; weekly Dependabot.
 
 ### MCP Interface
 
@@ -87,6 +90,50 @@ MLOPS_USE_STUBS=false docker-compose up    # with GCP
 | `MLOPS_AUTH_ENABLED` | `false` | Enable API key / JWT authentication |
 | `MLOPS_AUTH_API_KEYS` | (empty) | Comma-separated API keys |
 | `MLOPS_AUTH_JWT_SECRET` | (empty) | JWT signing secret (HS256) |
+| `MLOPS_ALLOWED_HOSTS` | (empty) | Comma-separated allowed Host headers for SSE transport (DNS-rebinding guard). Set this to the externally-served hostname behind a managed platform (Cloud Run, Knative). |
+| `MLOPS_COMPLIANCE_STRICT` | `false` | Gate deploys on EU AI Act compliance (PROHIBITED blocked; HIGH-risk requires complete model card + controls). |
+| `MLOPS_GCP_CALL_TIMEOUT_SECONDS` | `120` | Hard per-call timeout for GCP SDK operations. |
+| `MLOPS_ENVIRONMENT` | `development` | `development` / `staging` / `production`. `production` refuses to boot without auth + strict compliance and rejects stub adapters. |
+
+## Cloud Run demo
+
+The repo ships ready to run as an SSE MCP server on Cloud Run with stub
+adapters (~$0 cost, scale-to-zero):
+
+```bash
+P=your-gcp-project
+R=us-central1
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com --project=$P
+gcloud artifacts repositories create demo --repository-format=docker --location=$R --project=$P
+IMG=$R-docker.pkg.dev/$P/demo/mlops-orchestrator:demo
+gcloud builds submit . --tag=$IMG --project=$P
+
+KEY=$(openssl rand -hex 24)
+HOST=mlops-orchestrator-demo-<PROJECT_NUMBER>.${R}.run.app
+gcloud run deploy mlops-orchestrator-demo \
+  --image=$IMG --region=$R --project=$P --platform=managed \
+  --no-allow-unauthenticated \
+  --port=8000 --cpu=1 --memory=512Mi \
+  --min-instances=0 --max-instances=2 \
+  --set-env-vars="MLOPS_USE_STUBS=true,MLOPS_TRANSPORT=sse,MLOPS_ENVIRONMENT=development,MLOPS_AUTH_ENABLED=true,MLOPS_AUTH_API_KEYS=$KEY,MLOPS_ALLOWED_HOSTS=$HOST"
+```
+
+Connect any MCP client via SSE with both a Cloud Run identity token and the
+app API key:
+
+```json
+{
+  "mcpServers": {
+    "mlops-demo": {
+      "url": "https://<service>.run.app/sse",
+      "headers": {
+        "Authorization": "Bearer <gcloud auth print-identity-token>",
+        "X-API-Key": "<MLOPS_AUTH_API_KEYS value>"
+      }
+    }
+  }
+}
+```
 
 ## Health Probes (Kubernetes)
 
@@ -108,7 +155,7 @@ pytest
 pytest --cov=mlops_orchestrator --cov-report=term-missing
 ```
 
-459 tests, 91% coverage. Test structure mirrors source:
+487 tests, 90% coverage. Test structure mirrors source:
 
 ```
 tests/
