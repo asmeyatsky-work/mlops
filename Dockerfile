@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM python:3.12-slim AS build
+FROM python:3.14-slim AS build
 
 WORKDIR /app
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
@@ -9,7 +9,7 @@ COPY mlops_orchestrator/ mlops_orchestrator/
 
 RUN pip install --no-cache-dir .
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Non-root user for runtime (UID/GID 10001 — outside common host ranges).
 RUN groupadd --system --gid 10001 mlops \
