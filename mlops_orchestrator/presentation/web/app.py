@@ -14,15 +14,23 @@ from starlette.responses import HTMLResponse, JSONResponse
 from starlette.responses import StreamingResponse
 from starlette.routing import Route
 
-from mlops_orchestrator.presentation.web.demo_runner import DEMO_AGENTS, DemoRunner
+from mlops_orchestrator.presentation.web.demo_runner import (
+    DEMO_AGENTS,
+    SCENARIOS,
+    DemoRunner,
+)
 
 
 _INDEX_HTML = (Path(__file__).parent / "templates" / "index.html").read_text()
 
 
-def build_demo_app(container) -> Starlette:
-    """Construct the public-facing demo app."""
-    runner = DemoRunner(container)
+def build_demo_app(container, pace_factor: float = 1.0) -> Starlette:
+    """Construct the public-facing demo app.
+
+    ``pace_factor`` scales all between-step pauses — set to 0 in tests so
+    the SSE stream completes immediately.
+    """
+    runner = DemoRunner(container, pace_factor=pace_factor)
 
     async def index(request: Request) -> HTMLResponse:
         return HTMLResponse(_INDEX_HTML)
@@ -40,12 +48,21 @@ def build_demo_app(container) -> Starlette:
             ]
         )
 
+    async def scenarios(request: Request) -> JSONResponse:
+        return JSONResponse(
+            [
+                {"id": sid, **meta}
+                for sid, meta in SCENARIOS.items()
+            ]
+        )
+
     async def run_pipeline(request: Request) -> StreamingResponse:
+        scenario = request.query_params.get("scenario", "standard")
         model_name = request.query_params.get("model", "demo-model")
 
         async def stream():
             try:
-                async for event in runner.run(model_name=model_name):
+                async for event in runner.run(scenario=scenario, model_name=model_name):
                     yield f"event: {event.kind}\ndata: {json.dumps(event.to_dict())}\n\n"
             except Exception as exc:  # surface errors to the UI
                 err = {"kind": "error", "error": str(exc)}
@@ -69,6 +86,7 @@ def build_demo_app(container) -> Starlette:
             Route("/", index),
             Route("/demo", index),
             Route("/api/agents", agents),
+            Route("/api/scenarios", scenarios),
             Route("/api/run", run_pipeline),
             Route("/healthz", healthz),
         ],

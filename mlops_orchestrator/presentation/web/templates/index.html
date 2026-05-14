@@ -13,6 +13,7 @@
     --text: #e6e8f0;
     --muted: #8a93b8;
     --accent: #4c8bf5;
+    --accent2: #8b5cf6;
     --good: #34d399;
     --warn: #fbbf24;
     --bad: #f87171;
@@ -20,7 +21,7 @@
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    background: linear-gradient(180deg, #070b1c 0%, #0b1020 100%);
+    background: radial-gradient(ellipse at top, #0f1530 0%, #070b1c 60%);
     color: var(--text);
     font-family: -apple-system, "Segoe UI", system-ui, Roboto, Helvetica, Arial, sans-serif;
     min-height: 100vh;
@@ -44,12 +45,39 @@
     text-transform: uppercase;
   }
   main {
-    padding: 32px 48px 80px;
-    max-width: 1400px;
+    padding: 28px 48px 80px;
+    max-width: 1500px;
     margin: 0 auto;
+  }
+  .scenario-bar {
     display: grid;
-    gap: 24px;
-    grid-template-columns: 320px 1fr;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .scenario-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    cursor: pointer;
+    transition: border-color .2s, background .2s, transform .2s;
+    user-select: none;
+  }
+  .scenario-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .scenario-card.active {
+    border-color: var(--accent);
+    background: linear-gradient(135deg, rgba(76,139,245,.15), rgba(139,92,246,.08));
+    box-shadow: 0 0 0 1px var(--accent) inset;
+  }
+  .scenario-card .icon { font-size: 20px; }
+  .scenario-card .title { margin-top: 6px; font-weight: 600; font-size: 14px; }
+  .scenario-card .summary { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+  .layout {
+    display: grid;
+    gap: 20px;
+    grid-template-columns: 320px 1fr 360px;
   }
   .panel {
     background: var(--panel);
@@ -59,18 +87,18 @@
   }
   .panel h2 {
     margin: 0;
-    padding: 14px 18px;
-    font-size: 13px;
-    letter-spacing: 0.08em;
+    padding: 12px 16px;
+    font-size: 11px;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--muted);
     border-bottom: 1px solid var(--border);
     background: var(--panel2);
-    font-weight: 600;
+    font-weight: 700;
   }
-  .panel .content { padding: 18px; }
-  .stack { display: flex; flex-direction: column; gap: 12px; }
-  .row { display: flex; gap: 12px; align-items: center; }
+  .panel .content { padding: 14px 16px; }
+  .stack { display: flex; flex-direction: column; gap: 14px; }
+  .row { display: flex; gap: 10px; align-items: center; }
   .grow { flex: 1; }
   .btn {
     background: var(--accent);
@@ -95,62 +123,125 @@
     border: 1px solid var(--border);
     color: var(--text);
     border-radius: 8px;
-    padding: 8px 12px;
-    font-size: 14px;
+    padding: 9px 12px;
+    font-size: 13px;
     width: 100%;
   }
-  .agents { display: grid; gap: 8px; }
+  .agents { display: grid; gap: 6px; }
   .agent {
     display: flex; align-items: center; gap: 10px;
-    padding: 10px 12px;
+    padding: 9px 11px;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--panel2);
-    transition: background .2s, border-color .2s;
+    transition: background .25s, border-color .25s;
   }
-  .agent.active { background: rgba(76, 139, 245, 0.12); border-color: var(--accent); }
+  .agent.active {
+    background: linear-gradient(90deg, rgba(76,139,245,.18), rgba(76,139,245,.05));
+    border-color: var(--accent);
+  }
   .agent .dot {
-    width: 10px; height: 10px; border-radius: 50%;
+    width: 8px; height: 8px; border-radius: 50%;
     background: var(--muted);
     flex-shrink: 0;
+    transition: background .2s, box-shadow .2s;
   }
-  .agent.active .dot { background: var(--accent); box-shadow: 0 0 12px var(--accent); }
-  .agent .role { font-weight: 600; font-size: 13px; text-transform: capitalize; }
-  .agent .caps { font-size: 11px; color: var(--muted); }
+  .agent.active .dot {
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+    animation: pulse 1.6s infinite ease-in-out;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 6px var(--accent); }
+    50% { box-shadow: 0 0 14px var(--accent); }
+  }
+  .agent .role { font-weight: 600; font-size: 12px; text-transform: capitalize; }
+  .agent .caps { font-size: 10px; color: var(--muted); }
+
   .steps { display: flex; flex-direction: column; gap: 8px; }
   .step {
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 12px 14px;
+    padding: 11px 13px;
     background: var(--panel2);
-    transition: border-color .2s, background .2s;
+    transition: border-color .3s, background .3s;
+    opacity: 0.5;
   }
-  .step.running { border-color: var(--warn); background: rgba(251, 191, 36, 0.06); }
-  .step.done { border-color: var(--good); }
-  .step.failed { border-color: var(--bad); background: rgba(248, 113, 113, 0.06); }
+  .step.live { opacity: 1; }
+  .step.running {
+    border-color: var(--warn);
+    background: linear-gradient(90deg, rgba(251,191,36,.10), transparent);
+  }
+  .step.done { border-color: var(--good); opacity: 1; }
+  .step.failed { border-color: var(--bad); background: rgba(248,113,113,0.06); opacity: 1; }
   .step-head { display: flex; justify-content: space-between; align-items: center; }
-  .step-name { font-weight: 600; font-size: 14px; }
-  .step-meta { font-size: 12px; color: var(--muted); }
+  .step-name { font-weight: 600; font-size: 13px; }
+  .step-meta { font-size: 11px; color: var(--muted); }
   .step-result {
     margin-top: 8px;
     padding: 8px 10px;
-    background: rgba(0,0,0,0.25);
+    background: rgba(0,0,0,0.3);
     border-radius: 6px;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 11px;
-    color: var(--muted);
-    max-height: 120px; overflow: auto;
+    font-size: 10px;
+    color: #b3bbd6;
+    max-height: 140px; overflow: auto;
     white-space: pre-wrap; word-break: break-all;
   }
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+  .narration {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 540px;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+  }
+  .narr {
+    border-left: 3px solid var(--accent);
+    padding: 10px 12px;
+    background: var(--panel2);
+    border-radius: 0 8px 8px 0;
+    font-size: 13px;
+    line-height: 1.55;
+    animation: fadeIn .35s ease-out;
+  }
+  .narr .who {
+    font-weight: 700;
+    font-size: 11px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+  .narr.orchestrator { border-left-color: #c084fc; }
+  .narr.orchestrator .who { color: #c084fc; }
+  .narr.data_engineer { border-left-color: #38bdf8; }
+  .narr.data_engineer .who { color: #38bdf8; }
+  .narr.architect { border-left-color: #f472b6; }
+  .narr.architect .who { color: #f472b6; }
+  .narr.validation { border-left-color: var(--warn); }
+  .narr.validation .who { color: var(--warn); }
+  .narr.deployment { border-left-color: var(--good); }
+  .narr.deployment .who { color: var(--good); }
+  .narr.finops { border-left-color: #facc15; }
+  .narr.finops .who { color: #facc15; }
+  .narr.security { border-left-color: var(--bad); }
+  .narr.security .who { color: var(--bad); }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateX(-4px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
   .stat {
     background: var(--panel2);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 12px 14px;
+    padding: 11px 13px;
   }
   .stat .label {
-    font-size: 11px; color: var(--muted);
+    font-size: 10px; color: var(--muted);
     text-transform: uppercase; letter-spacing: 0.06em;
     margin-bottom: 4px;
   }
@@ -158,29 +249,16 @@
   .stat.good .value { color: var(--good); }
   .stat.warn .value { color: var(--warn); }
   .stat.bad .value { color: var(--bad); }
-  .compliance, .cost {
-    display: flex; gap: 12px; align-items: center;
-    padding: 10px 12px;
-    background: var(--panel2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-  }
-  .compliance.allow { border-color: var(--good); }
-  .compliance.block { border-color: var(--bad); }
-  pre.json {
-    margin: 0;
-    background: var(--panel2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 11px;
-    color: var(--muted);
-    max-height: 220px; overflow: auto;
-    white-space: pre-wrap;
-  }
-  footer { padding: 24px 48px; color: var(--muted); font-size: 12px; }
+
+  .empty { color: var(--muted); font-size: 12px; font-style: italic; padding: 8px 0; }
+
+  footer { padding: 24px 48px; color: var(--muted); font-size: 12px; text-align: center; }
   footer a { color: var(--accent); text-decoration: none; }
+
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: 1fr; }
+    .scenario-bar { grid-template-columns: 1fr 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -193,53 +271,52 @@
 </header>
 
 <main>
-  <aside class="stack">
-    <div class="panel">
-      <h2>Specialist agents</h2>
-      <div class="content"><div id="agents" class="agents"></div></div>
-    </div>
+  <div class="scenario-bar" id="scenarios"></div>
 
-    <div class="panel">
-      <h2>Compliance gate</h2>
-      <div class="content">
-        <div id="compliance" class="compliance"><span class="dot"></span><span id="compliance-text">idle</span></div>
+  <div class="layout">
+    <aside class="stack">
+      <div class="panel">
+        <h2>Specialist agents</h2>
+        <div class="content"><div id="agents" class="agents"></div></div>
       </div>
-    </div>
 
-    <div class="panel">
-      <h2>Session state</h2>
-      <div class="content"><pre class="json" id="session">{}</pre></div>
-    </div>
-  </aside>
+      <div class="panel">
+        <h2>Session state</h2>
+        <div class="content"><pre style="margin:0;font-family:ui-monospace,SF Mono,Menlo,monospace;font-size:10px;color:#b3bbd6;max-height:200px;overflow:auto" id="session">{}</pre></div>
+      </div>
+    </aside>
 
-  <section class="stack">
-    <div class="panel">
-      <h2>Run the pipeline</h2>
-      <div class="content">
-        <div class="row" style="margin-bottom:16px">
-          <input type="text" id="model" value="demo-model" class="grow" placeholder="model name">
-          <button id="run" class="btn">Run end-to-end</button>
-          <button id="clear" class="btn secondary">Clear</button>
-        </div>
-        <div class="stats">
-          <div class="stat"><div class="label">Steps</div><div class="value" id="stat-steps">0/7</div></div>
-          <div class="stat"><div class="label">Duration</div><div class="value" id="stat-duration">—</div></div>
-          <div class="stat" id="stat-status-card"><div class="label">Status</div><div class="value" id="stat-status">idle</div></div>
-          <div class="stat" id="stat-cost-card"><div class="label">GPU idle</div><div class="value" id="stat-gpu-idle">—</div></div>
+    <section class="stack">
+      <div class="panel">
+        <h2 id="scenario-title">Run the demo</h2>
+        <div class="content">
+          <div class="row" style="margin-bottom:14px">
+            <input type="text" id="model" value="demo-model" class="grow" placeholder="model name">
+            <button id="run" class="btn">Run scenario</button>
+            <button id="clear" class="btn secondary">Clear</button>
+          </div>
+          <div class="stats">
+            <div class="stat"><div class="label">Steps</div><div class="value" id="stat-steps">—</div></div>
+            <div class="stat"><div class="label">Duration</div><div class="value" id="stat-duration">—</div></div>
+            <div class="stat" id="stat-status-card"><div class="label">Status</div><div class="value" id="stat-status">idle</div></div>
+            <div class="stat" id="stat-extra-card"><div class="label" id="stat-extra-label">—</div><div class="value" id="stat-extra">—</div></div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="panel">
-      <h2>Workflow steps</h2>
-      <div class="content"><div id="steps" class="steps"></div></div>
-    </div>
+      <div class="panel">
+        <h2>Workflow steps</h2>
+        <div class="content"><div id="steps" class="steps"><div class="empty">Pick a scenario above and hit Run.</div></div></div>
+      </div>
+    </section>
 
-    <div class="panel">
-      <h2>FinOps recommendations</h2>
-      <div class="content"><div id="cost-recommendations" class="stack"></div></div>
-    </div>
-  </section>
+    <aside class="stack">
+      <div class="panel">
+        <h2>Live narration</h2>
+        <div class="content"><div id="narration" class="narration"><div class="empty">The orchestrator and specialists explain what they're doing here as the run progresses.</div></div></div>
+      </div>
+    </aside>
+  </div>
 </main>
 
 <footer>
@@ -248,42 +325,27 @@
 </footer>
 
 <script>
-const STEP_ORDER = [
-  "create_dataset",
-  "train_model",
-  "job_status",
-  "compliance_gate",
-  "deploy_to_vertex",
-  "configure_monitoring",
-  "cost_summary",
-];
-const STEP_LABELS = {
-  create_dataset: "Create managed dataset",
-  train_model: "Submit training job",
-  job_status: "Validate training status",
-  compliance_gate: "EU AI Act compliance gate",
-  deploy_to_vertex: "Deploy to Vertex endpoint",
-  configure_monitoring: "Configure drift monitoring",
-  cost_summary: "FinOps cost summary",
-};
-
 const agentsEl = document.getElementById("agents");
 const stepsEl = document.getElementById("steps");
 const sessionEl = document.getElementById("session");
-const recsEl = document.getElementById("cost-recommendations");
-const complianceEl = document.getElementById("compliance");
-const complianceText = document.getElementById("compliance-text");
+const narrationEl = document.getElementById("narration");
+const scenariosEl = document.getElementById("scenarios");
+const scenarioTitle = document.getElementById("scenario-title");
+const runBtn = document.getElementById("run");
+const clearBtn = document.getElementById("clear");
 const statSteps = document.getElementById("stat-steps");
 const statDuration = document.getElementById("stat-duration");
 const statStatus = document.getElementById("stat-status");
 const statStatusCard = document.getElementById("stat-status-card");
-const statGpuIdle = document.getElementById("stat-gpu-idle");
-const runBtn = document.getElementById("run");
-const clearBtn = document.getElementById("clear");
+const statExtra = document.getElementById("stat-extra");
+const statExtraLabel = document.getElementById("stat-extra-label");
+const statExtraCard = document.getElementById("stat-extra-card");
 
 let agents = [];
+let activeScenario = "standard";
 let runStart = 0;
 let completed = 0;
+let totalSteps = 0;
 let durationTimer = null;
 
 async function loadAgents() {
@@ -304,20 +366,30 @@ async function loadAgents() {
   });
 }
 
-function buildSteps() {
-  stepsEl.innerHTML = "";
-  STEP_ORDER.forEach(step => {
+async function loadScenarios() {
+  const r = await fetch("/api/scenarios");
+  const scenarios = await r.json();
+  scenariosEl.innerHTML = "";
+  scenarios.forEach((s, i) => {
     const el = document.createElement("div");
-    el.className = "step";
-    el.id = `step-${step}`;
+    el.className = "scenario-card" + (i === 0 ? " active" : "");
+    el.dataset.id = s.id;
     el.innerHTML = `
-      <div class="step-head">
-        <div class="step-name">${STEP_LABELS[step]}</div>
-        <div class="step-meta"><span class="agent-tag">—</span> · <span class="dur">—</span></div>
-      </div>`;
-    stepsEl.appendChild(el);
+      <div class="icon">${s.icon || "▶"}</div>
+      <div class="title">${s.title}</div>
+      <div class="summary">${s.summary}</div>`;
+    el.addEventListener("click", () => selectScenario(s.id, s.title));
+    scenariosEl.appendChild(el);
   });
-  statSteps.textContent = `0/${STEP_ORDER.length}`;
+}
+
+function selectScenario(id, title) {
+  activeScenario = id;
+  document.querySelectorAll(".scenario-card").forEach(c => {
+    c.classList.toggle("active", c.dataset.id === id);
+  });
+  scenarioTitle.textContent = title;
+  reset();
 }
 
 function setAgentActive(role) {
@@ -326,17 +398,47 @@ function setAgentActive(role) {
   if (el) el.classList.add("active");
 }
 
+function addNarration(agent, text) {
+  // remove "empty" placeholder on first narration
+  const empty = narrationEl.querySelector(".empty");
+  if (empty) empty.remove();
+  const el = document.createElement("div");
+  el.className = `narr ${agent}`;
+  el.innerHTML = `<div class="who">${agent.replace(/_/g, " ")}</div><div>${text}</div>`;
+  narrationEl.appendChild(el);
+  narrationEl.scrollTop = narrationEl.scrollHeight;
+}
+
+function ensureStep(step) {
+  let el = document.getElementById(`step-${step}`);
+  if (!el) {
+    // Remove "empty" placeholder on first step
+    const empty = stepsEl.querySelector(".empty");
+    if (empty) empty.remove();
+    el = document.createElement("div");
+    el.id = `step-${step}`;
+    el.className = "step live";
+    el.innerHTML = `
+      <div class="step-head">
+        <div class="step-name">${step.replace(/_/g, " ")}</div>
+        <div class="step-meta"><span class="agent-tag">—</span> · <span class="dur">running</span></div>
+      </div>`;
+    stepsEl.appendChild(el);
+    totalSteps += 1;
+    statSteps.textContent = `${completed}/${totalSteps}`;
+  }
+  return el;
+}
+
 function onStepStarted(p) {
-  const el = document.getElementById(`step-${p.step}`);
-  if (!el) return;
-  el.classList.add("running");
+  const el = ensureStep(p.step);
+  el.classList.add("running", "live");
   el.querySelector(".agent-tag").textContent = p.agent.replace(/_/g, " ");
   setAgentActive(p.agent);
 }
 
 function onStepCompleted(p) {
-  const el = document.getElementById(`step-${p.step}`);
-  if (!el) return;
+  const el = ensureStep(p.step);
   el.classList.remove("running");
   el.classList.add("done");
   el.querySelector(".dur").textContent = `${p.duration_ms} ms`;
@@ -347,74 +449,99 @@ function onStepCompleted(p) {
   el.appendChild(result);
 
   completed += 1;
-  statSteps.textContent = `${completed}/${STEP_ORDER.length}`;
+  statSteps.textContent = `${completed}/${totalSteps}`;
 
+  // Per-scenario extra-stat surfacing
   if (p.step === "compliance_gate") {
-    const decision = p.result.decision;
-    complianceEl.className = "compliance " + decision;
-    complianceText.textContent = `${p.result.risk_tier} → ${decision.toUpperCase()}`;
-  }
-  if (p.step === "cost_summary") {
-    const gpu = p.result.metrics?.gpu_idle_pct;
-    if (gpu !== undefined) {
-      statGpuIdle.textContent = `${(gpu * 100).toFixed(0)}%`;
-      const card = document.getElementById("stat-cost-card");
-      card.classList.remove("good","warn","bad");
-      card.classList.add(gpu > 0.4 ? "bad" : gpu > 0.2 ? "warn" : "good");
+    const decision = p.result?.decision;
+    if (decision) {
+      statExtraLabel.textContent = "Compliance";
+      statExtra.textContent = decision.toUpperCase();
+      statExtraCard.classList.remove("good","warn","bad");
+      statExtraCard.classList.add(decision === "allow" ? "good" : "bad");
     }
-    recsEl.innerHTML = "";
-    (p.result.recommendations || []).forEach(r => {
-      const el = document.createElement("div");
-      el.className = "cost";
-      el.innerHTML = `<div><strong>${r.type}</strong><div class="caps">${r.description}</div></div>
-                      <div style="margin-left:auto;text-align:right">
-                        <div class="value" style="color:var(--good);font-size:14px;font-weight:600">
-                          $${r.estimated_savings.toFixed(0)}/mo
-                        </div>
-                        <div class="caps">${r.priority}</div>
-                      </div>`;
-      recsEl.appendChild(el);
-    });
+  }
+  if (p.step === "cost_summary" || p.step === "billing_scan") {
+    const gpu = p.result?.metrics?.gpu_idle_pct ?? p.result?.gpu_idle_pct;
+    if (gpu !== undefined) {
+      statExtraLabel.textContent = "GPU idle";
+      statExtra.textContent = `${(gpu * 100).toFixed(0)}%`;
+      statExtraCard.classList.remove("good","warn","bad");
+      statExtraCard.classList.add(gpu > 0.4 ? "bad" : gpu > 0.2 ? "warn" : "good");
+    }
+  }
+  if (p.step === "generate_recommendations") {
+    const total = p.result?.total_projected_savings_monthly_usd;
+    if (total) {
+      statExtraLabel.textContent = "Savings/mo";
+      statExtra.textContent = `$${total.toLocaleString()}`;
+      statExtraCard.classList.add("good");
+    }
+  }
+  if (p.step === "drift_analysis") {
+    statExtraLabel.textContent = "Verdict";
+    statExtra.textContent = p.result?.verdict || "—";
+    statExtraCard.classList.add("bad");
   }
 }
 
+function onStepFailed(p) {
+  const el = ensureStep(p.step);
+  el.classList.remove("running");
+  el.classList.add("failed");
+  el.querySelector(".dur").textContent = `failed`;
+}
+
+function onRunStarted(p) {
+  if (p.title) scenarioTitle.textContent = p.title;
+}
+
 function onRunCompleted(p) {
-  sessionEl.textContent = JSON.stringify(p.session, null, 2);
+  // Try to render session state from the last completed step that returned one
   statStatus.textContent = "complete";
-  statStatusCard.classList.add("good");
+  statStatusCard.classList.remove("warn"); statStatusCard.classList.add("good");
   document.querySelectorAll(".agent").forEach(a => a.classList.remove("active"));
   runBtn.disabled = false;
   if (durationTimer) { clearInterval(durationTimer); durationTimer = null; }
 }
 
 function reset() {
-  buildSteps();
+  stepsEl.innerHTML = '<div class="empty">Pick a scenario above and hit Run.</div>';
+  narrationEl.innerHTML = '<div class="empty">The orchestrator and specialists explain what they\'re doing here as the run progresses.</div>';
   sessionEl.textContent = "{}";
-  recsEl.innerHTML = "";
-  complianceEl.className = "compliance";
-  complianceText.textContent = "idle";
   statStatus.textContent = "idle";
   statStatusCard.classList.remove("good","warn","bad");
-  statGpuIdle.textContent = "—";
+  statExtraLabel.textContent = "—";
+  statExtra.textContent = "—";
+  statExtraCard.classList.remove("good","warn","bad");
   statDuration.textContent = "—";
+  statSteps.textContent = "—";
   completed = 0;
+  totalSteps = 0;
+  document.querySelectorAll(".agent").forEach(a => a.classList.remove("active"));
 }
 
 async function run() {
   reset();
   runBtn.disabled = true;
   statStatus.textContent = "running";
-  statStatusCard.classList.add("warn");
+  statStatusCard.classList.remove("good","bad"); statStatusCard.classList.add("warn");
   runStart = Date.now();
   durationTimer = setInterval(() => {
     statDuration.textContent = `${((Date.now() - runStart) / 1000).toFixed(1)}s`;
   }, 100);
 
   const model = document.getElementById("model").value || "demo-model";
-  const es = new EventSource(`/api/run?model=${encodeURIComponent(model)}`);
-  es.addEventListener("run.started", () => {});
+  const es = new EventSource(`/api/run?scenario=${encodeURIComponent(activeScenario)}&model=${encodeURIComponent(model)}`);
+  es.addEventListener("run.started", e => onRunStarted(JSON.parse(e.data)));
+  es.addEventListener("narration", e => {
+    const d = JSON.parse(e.data);
+    addNarration(d.agent, d.text);
+    setAgentActive(d.agent);
+  });
   es.addEventListener("step.started", e => onStepStarted(JSON.parse(e.data)));
   es.addEventListener("step.completed", e => onStepCompleted(JSON.parse(e.data)));
+  es.addEventListener("step.failed", e => onStepFailed(JSON.parse(e.data)));
   es.addEventListener("run.completed", e => { onRunCompleted(JSON.parse(e.data)); es.close(); });
   es.addEventListener("error", e => {
     statStatus.textContent = "error";
@@ -428,7 +555,10 @@ async function run() {
 runBtn.addEventListener("click", run);
 clearBtn.addEventListener("click", reset);
 
-loadAgents().then(buildSteps);
+(async () => {
+  await loadAgents();
+  await loadScenarios();
+})();
 </script>
 </body>
 </html>
