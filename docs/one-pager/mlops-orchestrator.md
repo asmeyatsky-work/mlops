@@ -1,8 +1,3 @@
-<!--
-Render with: npx @marp-team/marp-cli mlops-orchestrator.md -o mlops-orchestrator.pdf
-                                                            -o mlops-orchestrator.html
-A4 portrait, single slide. Designed to print on one page.
--->
 ---
 marp: true
 theme: default

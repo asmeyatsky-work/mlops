@@ -1,8 +1,3 @@
-<!--
-Render with: npx @marp-team/marp-cli mlops-orchestrator.md -o mlops-orchestrator.pdf
-                                                            -o mlops-orchestrator.pptx
-                                                            -o mlops-orchestrator.html
--->
 ---
 marp: true
 theme: default
