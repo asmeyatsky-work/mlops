@@ -72,24 +72,39 @@ def main() -> None:
             mcp.run(transport="stdio")
             return
 
-        # SSE path — wrap with our auth middleware (FastMCP's own auth is OAuth-
-        # shaped; we use simple API keys / HS256 JWTs). Bind 0.0.0.0 so the
-        # container platform's external probes can reach us.
+        # SSE path — wrap MCP with our auth middleware (FastMCP's own auth is
+        # OAuth-shaped; we use simple API keys / HS256 JWTs) and mount the
+        # public demo UI alongside it on the same uvicorn process.
         import os
         import uvicorn
+
         from mlops_orchestrator.infrastructure.auth.auth_middleware import AuthMiddleware
+        from mlops_orchestrator.presentation.web.app import build_demo_app
 
         host = "0.0.0.0"
         port = int(os.environ.get("PORT", mcp.settings.port))
-        app = mcp.sse_app()
 
+        mcp_app = mcp.sse_app()
         if auth_config.enabled:
             from mlops_orchestrator.infrastructure.auth.sse_auth_middleware import (
                 SSEAuthMiddleware,
             )
-            app = SSEAuthMiddleware(app, AuthMiddleware(auth_config))
+            mcp_app = SSEAuthMiddleware(mcp_app, AuthMiddleware(auth_config))
 
-        uvicorn.run(app, host=host, port=port, log_level="info")
+        demo_app = build_demo_app(container)
+
+        # Dispatcher: route by path prefix. MCP owns /sse and /messages,
+        # everything else is the demo. Avoids Starlette's nested-Mount path
+        # rewriting which would turn /sse into /sse/sse.
+        async def dispatcher(scope, receive, send):
+            if scope["type"] in ("http", "websocket"):
+                path = scope.get("path", "")
+                if path.startswith("/sse") or path.startswith("/messages"):
+                    await mcp_app(scope, receive, send)
+                    return
+            await demo_app(scope, receive, send)
+
+        uvicorn.run(dispatcher, host=host, port=port, log_level="info")
     except Exception as e:
         print(f"Error starting MLOps Orchestrator: {e}", file=sys.stderr)
         sys.exit(1)
