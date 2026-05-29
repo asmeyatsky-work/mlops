@@ -84,6 +84,12 @@ class DependencyContainer:
         )
         self._governance_port = InMemoryGovernanceAdapter()
 
+        # Reasoning is always stubbed in stub mode (no LLM / network).
+        from mlops_orchestrator.infrastructure.adapters.stub_reasoning_adapter import (
+            StubReasoningAdapter,
+        )
+        self._reasoning_port = StubReasoningAdapter()
+
     def _build_gcp_adapters(self) -> None:
         from mlops_orchestrator.infrastructure.adapters.vertex_dataset_adapter import (
             VertexDatasetAdapter,
@@ -137,6 +143,22 @@ class DependencyContainer:
         # once the production registry is provisioned. The in-memory adapter
         # still enforces the gate when records are populated at startup.
         self._governance_port = InMemoryGovernanceAdapter()
+
+        # Reasoning: live ADK adapter only when explicitly enabled; otherwise the
+        # deterministic stub (so GCP mode still boots without Gemini access).
+        if self._settings.reasoning_enabled:
+            from mlops_orchestrator.infrastructure.adapters.adk_reasoning_adapter import (
+                ADKReasoningAdapter,
+            )
+            self._reasoning_port = ADKReasoningAdapter(
+                model=self._settings.reasoning_model,
+                timeout_seconds=self._settings.reasoning_timeout_seconds,
+            )
+        else:
+            from mlops_orchestrator.infrastructure.adapters.stub_reasoning_adapter import (
+                StubReasoningAdapter,
+            )
+            self._reasoning_port = StubReasoningAdapter()
 
         # Use real cost adapter if billing table is configured
         if self._settings.billing_table:
@@ -244,6 +266,12 @@ class DependencyContainer:
             audit_log=self._audit_log,
         )
 
+    def agent_executor(self):
+        from mlops_orchestrator.application.orchestration.agent_executor import (
+            AgentExecutor,
+        )
+        return AgentExecutor(reasoning_port=self._reasoning_port)
+
     # ─── Query factories ───
 
     def job_status_query(self) -> JobStatusQuery:
@@ -301,3 +329,7 @@ class DependencyContainer:
     @property
     def governance_port(self):
         return self._governance_port
+
+    @property
+    def reasoning_port(self):
+        return self._reasoning_port

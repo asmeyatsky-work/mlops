@@ -67,6 +67,20 @@ class Settings(BaseSettings):
         default=120.0, description="Hard timeout for each GCP SDK call"
     )
 
+    # Reasoning agents (Google ADK). Off by default: the deterministic stub
+    # reasoning adapter is used unless this is enabled AND not in stub mode.
+    reasoning_enabled: bool = Field(
+        default=False,
+        description="Use the live Google ADK reasoning adapter instead of the deterministic stub",
+    )
+    reasoning_model: str = Field(
+        default="gemini-2.0-flash",
+        description="Gemini model id used by the ADK reasoning adapter",
+    )
+    reasoning_timeout_seconds: float = Field(
+        default=60.0, description="Hard timeout for each reasoning (LLM) call"
+    )
+
     # Deployment environment marker. Set to 'production' to fail-fast when auth
     # is disabled and to refuse stub adapters at startup.
     environment: Literal["development", "staging", "production"] = Field(

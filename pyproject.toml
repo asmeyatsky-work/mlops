@@ -37,6 +37,11 @@ otel = [
     "opentelemetry-sdk>=1.25,<2.0",
     "opentelemetry-exporter-otlp>=1.25,<2.0",
 ]
+# Live reasoning agents (Google Agent Development Kit, Gemini-backed).
+# See docs/adr/0001-adopt-google-adk.md for the stack-deviation rationale.
+adk = [
+    "google-adk>=1.0.0,<2.0",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -50,6 +55,7 @@ omit = [
     "mlops_orchestrator/infrastructure/adapters/gke_*",
     "mlops_orchestrator/infrastructure/adapters/cloud_logging_*",
     "mlops_orchestrator/infrastructure/adapters/billing_*",
+    "mlops_orchestrator/infrastructure/adapters/adk_*",
 ]
 
 [tool.coverage.report]

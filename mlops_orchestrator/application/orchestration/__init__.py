@@ -14,6 +14,12 @@ from mlops_orchestrator.application.orchestration.swarm_coordinator import (
     SwarmCoordinator,
 )
 from mlops_orchestrator.application.orchestration.agent_registry import AgentRegistry
+from mlops_orchestrator.application.orchestration.agent_executor import (
+    AgentExecutor,
+    DEFERRED_PREFIX,
+    DETERMINISTIC_ROLES,
+    REASONING_ROLES,
+)
 
 __all__ = [
     "DAGOrchestrator",
@@ -24,4 +30,8 @@ __all__ = [
     "OrchestrationPattern",
     "SwarmCoordinator",
     "AgentRegistry",
+    "AgentExecutor",
+    "DEFERRED_PREFIX",
+    "DETERMINISTIC_ROLES",
+    "REASONING_ROLES",
 ]
