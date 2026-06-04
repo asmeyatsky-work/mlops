@@ -15,7 +15,7 @@ dependencies = [
     "google-cloud-aiplatform>=1.40.0,<2.0",
     "google-cloud-bigquery>=3.14.0,<4.0",
     "google-cloud-logging>=3.9.0,<4.0",
-    "google-cloud-storage>=2.14.0,<3.0",
+    "google-cloud-storage>=2.14.0,<4.0",
     "google-cloud-resource-manager>=1.12.0,<2.0",
     "kubernetes>=28.0.0,<32.0",
     "scipy>=1.12.0,<2.0",
@@ -40,7 +40,7 @@ otel = [
 # Live reasoning agents (Google Agent Development Kit, Gemini-backed).
 # See docs/adr/0001-adopt-google-adk.md for the stack-deviation rationale.
 adk = [
-    "google-adk>=1.0.0,<2.0",
+    "google-adk>=1.0.0,<3.0",
 ]
 
 [tool.pytest.ini_options]
