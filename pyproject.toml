@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 # Upper bounds are explicit so a major-version bump cannot silently land via
 # `pip install`. Dependabot widens these on a controlled cadence.
 dependencies = [
-    "mcp>=1.0.0,<2.0",
+    "mcp>=1.0.0,<3.0",
     "pydantic>=2.0,<3.0",
     "google-cloud-aiplatform>=1.40.0,<2.0",
     "google-cloud-bigquery>=3.14.0,<4.0",
